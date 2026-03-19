@@ -1,574 +1,450 @@
 "use strict";
-/**
- * Data Masking Suggestion Plugin for Kiro IDE
- *
- * This extension provides AI-powered detection and masking suggestions
- * for sensitive data fields in source code.
- *
- * Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.6
- */
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
-const vscode = __importStar(require("vscode"));
-const scanner_1 = require("./scanner");
-const pattern_matcher_1 = require("./analyzer/pattern-matcher");
-const confidence_scorer_1 = require("./analyzer/confidence-scorer");
-const usage_context_analyzer_1 = require("./analyzer/usage-context-analyzer");
-const suggestion_engine_1 = require("./suggestion-engine");
-const config_manager_1 = require("./config/config-manager");
-const report_1 = require("./report");
-const ui_1 = require("./ui");
-const patterns_1 = require("./analyzer/patterns");
-let pluginState = null;
-/**
- * VS Code file system adapter
- */
-function createVSCodeFileSystem() {
-    return {
-        async readFile(path) {
-            const uri = vscode.Uri.file(path);
-            const content = await vscode.workspace.fs.readFile(uri);
-            return Buffer.from(content).toString('utf-8');
-        },
-        async writeFile(path, content) {
-            const uri = vscode.Uri.file(path);
-            await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
-        },
-        async exists(path) {
-            try {
-                const uri = vscode.Uri.file(path);
-                await vscode.workspace.fs.stat(uri);
-                return true;
-            }
-            catch {
-                return false;
-            }
-        },
-        async mkdir(path) {
-            const uri = vscode.Uri.file(path);
-            await vscode.workspace.fs.createDirectory(uri);
-        },
-        async rename(path, newPath) {
-            const oldUri = vscode.Uri.file(path);
-            const newUri = vscode.Uri.file(newPath);
-            await vscode.workspace.fs.rename(oldUri, newUri);
-        },
-    };
+const vscode = require("vscode");
+const DIAGNOSTIC_SOURCE = "PII Checker";
+const SUPPORTED_LANGUAGES = [
+    "json", "jsonc",
+    "csharp", "vb", "razor", "aspnetcorerazor",
+    "javascript", "typescript", "javascriptreact", "typescriptreact",
+];
+// Languages that support logging context detection
+const LOG_LANGUAGES = [
+    "csharp", "vb", "razor", "aspnetcorerazor",
+    "javascript", "typescript", "javascriptreact", "typescriptreact",
+];
+let diagnosticCollection;
+let statusBarItem;
+function activate(context) {
+    diagnosticCollection =
+        vscode.languages.createDiagnosticCollection("pii-checker");
+    // Status bar item to show PII count
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem.command = "workbench.actions.view.problems";
+    context.subscriptions.push(statusBarItem);
+    context.subscriptions.push(diagnosticCollection, vscode.workspace.onDidOpenTextDocument((doc) => {
+        analyzeDocument(doc);
+        showPiiNotification(doc);
+    }), vscode.workspace.onDidChangeTextDocument((e) => analyzeDocument(e.document)), vscode.workspace.onDidCloseTextDocument((doc) => {
+        diagnosticCollection.delete(doc.uri);
+        updateStatusBar();
+    }), vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar()));
+    // Analyze already-open files
+    vscode.workspace.textDocuments.forEach(analyzeDocument);
+    // Register code action provider for all supported languages
+    const documentSelectors = SUPPORTED_LANGUAGES.map((lang) => ({ language: lang }));
+    context.subscriptions.push(vscode.languages.registerCodeActionsProvider(documentSelectors, new PiiCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
 }
-/**
- * VS Code file reader adapter for Scanner
- */
-function createVSCodeFileReader() {
-    return {
-        async readFile(filePath) {
-            const uri = vscode.Uri.file(filePath);
-            const content = await vscode.workspace.fs.readFile(uri);
-            return Buffer.from(content).toString('utf-8');
-        },
-        async exists(filePath) {
-            try {
-                const uri = vscode.Uri.file(filePath);
-                await vscode.workspace.fs.stat(uri);
-                return true;
-            }
-            catch {
-                return false;
-            }
-        },
-        async getFileSize(filePath) {
-            const uri = vscode.Uri.file(filePath);
-            const stat = await vscode.workspace.fs.stat(uri);
-            return stat.size;
-        },
-        async listFiles(includePatterns, excludePatterns) {
-            const files = [];
-            for (const pattern of includePatterns) {
-                const excludeGlob = excludePatterns.length > 0
-                    ? `{${excludePatterns.join(',')}}`
-                    : '**/node_modules/**';
-                const uris = await vscode.workspace.findFiles(pattern, excludeGlob);
-                files.push(...uris.map(uri => uri.fsPath));
-            }
-            return files;
-        },
-    };
-}
-/**
- * Activates the extension
- *
- * Validates: Requirements 7.1
- */
-async function activate(context) {
-    console.log('Data Masking Suggestion Plugin is now active');
-    // Initialize components
-    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '.';
-    const configPath = `${workspacePath}/.kiro/masking-config.json`;
-    const userConfigPath = `${process.env.HOME}/.kiro/masking-config.json`;
-    // Create file system adapter
-    const fs = createVSCodeFileSystem();
-    const fileReader = createVSCodeFileReader();
-    // Initialize core components
-    const scanner = new scanner_1.Scanner(fileReader);
-    const patternMatcher = (0, pattern_matcher_1.createPatternMatcher)();
-    const confidenceScorer = (0, confidence_scorer_1.createConfidenceScorer)();
-    const contextAnalyzer = (0, usage_context_analyzer_1.createUsageContextAnalyzer)();
-    const suggestionEngine = (0, suggestion_engine_1.createSuggestionEngine)();
-    const configManager = (0, config_manager_1.createConfigurationManager)(fs, configPath, userConfigPath);
-    const reportGenerator = (0, report_1.createReportGenerator)(workspacePath);
-    // Initialize UI components
-    const suggestionPanel = (0, ui_1.createSuggestionPanel)();
-    const highlighter = (0, ui_1.createInlineHighlighter)();
-    const tooltipProvider = (0, ui_1.createTooltipProvider)();
-    const progressIndicator = (0, ui_1.createProgressIndicator)();
-    // Register built-in patterns
-    for (const pattern of patterns_1.builtInPatterns) {
-        patternMatcher.registerPattern(pattern);
-    }
-    // Create decoration type for highlighting
-    const decorationType = vscode.window.createTextEditorDecorationType({
-        backgroundColor: 'rgba(255, 193, 7, 0.2)',
-        border: '1px solid #ffc107',
-    });
-    // Create status bar item - Validates: Requirements 4.6
-    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.command = 'dataMasking.openPanel';
-    statusBarItem.text = '$(shield) Data Masking';
-    statusBarItem.tooltip = 'Click to open Data Masking Suggestion Panel';
-    statusBarItem.show();
-    // Store plugin state
-    pluginState = {
-        scanner,
-        patternMatcher,
-        confidenceScorer,
-        contextAnalyzer,
-        suggestionEngine,
-        configManager,
-        reportGenerator,
-        suggestionPanel,
-        highlighter,
-        tooltipProvider,
-        progressIndicator,
-        decorationType,
-        statusBarItem,
-    };
-    // Load configuration
-    await configManager.load();
-    // Register commands - Validates: Requirements 7.5, 7.6
-    registerCommands(context);
-    // Register file event handlers - Validates: Requirements 7.3, 7.4
-    registerFileEventHandlers(context);
-    // Register hover provider - Validates: Requirements 4.4
-    registerHoverProvider(context);
-    // Update progress indicator listener
-    progressIndicator.onProgress((info) => {
-        statusBarItem.text = info.message;
-        statusBarItem.tooltip = pluginState?.progressIndicator.getTooltip() || '';
-    });
-    // Initial scan if configured
-    const config = configManager.getConfiguration();
-    if (config.settings.scanOnOpen) {
-        await scanWorkspace();
-    }
-    // Add disposables
-    context.subscriptions.push(statusBarItem, decorationType);
-}
-/**
- * Registers all commands
- *
- * Validates: Requirements 7.5, 7.6
- */
-function registerCommands(context) {
-    // Open suggestion panel - Validates: Requirements 7.2
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.openPanel', () => {
-        openSuggestionPanel();
-    }));
-    // Scan workspace
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.scanWorkspace', async () => {
-        await scanWorkspace();
-    }));
-    // Scan current file
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.scanFile', async () => {
-        const editor = vscode.window.activeTextEditor;
-        if (editor) {
-            await scanFile(editor.document.uri.fsPath);
-        }
-    }));
-    // Accept suggestion - Validates: Requirements 5.1
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.acceptSuggestion', async (suggestionId) => {
-        await processSuggestionDecision(suggestionId, 'accept');
-    }));
-    // Reject suggestion - Validates: Requirements 5.2
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.rejectSuggestion', async (suggestionId) => {
-        await processSuggestionDecision(suggestionId, 'reject');
-    }));
-    // Defer suggestion - Validates: Requirements 5.3
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.deferSuggestion', async (suggestionId) => {
-        await processSuggestionDecision(suggestionId, 'defer');
-    }));
-    // Export report
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.exportReport', async () => {
-        await exportReport();
-    }));
-    // Toggle highlighting
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.toggleHighlighting', () => {
-        if (pluginState) {
-            const enabled = !pluginState.highlighter.isEnabled();
-            pluginState.highlighter.setEnabled(enabled);
-            updateDecorations();
-            vscode.window.showInformationMessage(`Sensitive field highlighting ${enabled ? 'enabled' : 'disabled'}`);
-        }
-    }));
-    // Register keyboard shortcuts - Validates: Requirements 7.5
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.acceptCurrentSuggestion', async () => {
-        const suggestion = getCurrentSuggestion();
-        if (suggestion) {
-            await processSuggestionDecision(suggestion.id, 'accept');
-        }
-    }));
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.rejectCurrentSuggestion', async () => {
-        const suggestion = getCurrentSuggestion();
-        if (suggestion) {
-            await processSuggestionDecision(suggestion.id, 'reject');
-        }
-    }));
-    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.deferCurrentSuggestion', async () => {
-        const suggestion = getCurrentSuggestion();
-        if (suggestion) {
-            await processSuggestionDecision(suggestion.id, 'defer');
-        }
-    }));
-}
-/**
- * Registers file event handlers
- *
- * Validates: Requirements 7.3, 7.4
- */
-function registerFileEventHandlers(context) {
-    // Handle file open - Validates: Requirements 7.3
-    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(async (document) => {
-        if (!pluginState)
-            return;
-        const config = pluginState.configManager.getConfiguration();
-        if (config.settings.scanOnOpen && (0, scanner_1.isSupported)(document.uri.fsPath)) {
-            await scanFile(document.uri.fsPath);
-        }
-    }));
-    // Handle file save - Validates: Requirements 7.4
-    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
-        if (!pluginState)
-            return;
-        const config = pluginState.configManager.getConfiguration();
-        if (config.settings.scanOnSave && (0, scanner_1.isSupported)(document.uri.fsPath)) {
-            await scanFile(document.uri.fsPath);
-        }
-    }));
-    // Handle active editor change
-    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (editor) {
-            updateDecorations();
-        }
-    }));
-}
-/**
- * Registers hover provider
- *
- * Validates: Requirements 4.4
- */
-function registerHoverProvider(context) {
-    const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'csharp', 'json'];
-    for (const language of supportedLanguages) {
-        context.subscriptions.push(vscode.languages.registerHoverProvider(language, {
-            provideHover(document, position) {
-                if (!pluginState)
-                    return null;
-                const tooltip = pluginState.tooltipProvider.getTooltipAt(document.uri.fsPath, position.line + 1, // Convert to 1-indexed
-                position.character);
-                if (!tooltip)
-                    return null;
-                const markdown = pluginState.tooltipProvider.generateMarkdown(tooltip);
-                return new vscode.Hover(new vscode.MarkdownString(markdown, true));
-            },
-        }));
-    }
-}
-/**
- * Scans the entire workspace
- */
-async function scanWorkspace() {
-    if (!pluginState)
-        return;
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
-        vscode.window.showWarningMessage('No workspace folder open');
-        return;
-    }
-    const { progressIndicator } = pluginState;
-    // Get all files
-    const files = await vscode.workspace.findFiles('**/*.{js,ts,jsx,tsx,py,java,cs,json}', '**/node_modules/**');
-    progressIndicator.startScanning(files.length);
-    const allSuggestions = [];
-    for (const file of files) {
-        try {
-            const suggestions = await scanFile(file.fsPath, false);
-            allSuggestions.push(...suggestions);
-            progressIndicator.incrementFilesScanned(suggestions.length);
-        }
-        catch (error) {
-            console.error(`Error scanning ${file.fsPath}:`, error);
-        }
-    }
-    progressIndicator.complete(allSuggestions.length);
-    updateDecorations();
-    vscode.window.showInformationMessage(`Scan complete: Found ${allSuggestions.length} sensitive fields in ${files.length} files`);
-}
-/**
- * Scans a single file
- */
-async function scanFile(filePath, updateUI = true) {
-    if (!pluginState)
-        return [];
-    const { scanner, patternMatcher, confidenceScorer, contextAnalyzer, suggestionEngine, configManager, highlighter, tooltipProvider, } = pluginState;
-    // Check if file is supported
-    if (!(0, scanner_1.isSupported)(filePath)) {
-        return [];
-    }
-    // Scan file
-    const scanResult = await scanner.scanFile(filePath);
-    if (scanResult.errors.length > 0) {
-        console.warn(`Scan errors in ${filePath}:`, scanResult.errors);
-    }
-    // Analyze fields and create suggestions
-    const suggestions = [];
-    for (const field of scanResult.fields) {
-        // Skip if already masked or rejected
-        if (configManager.isFieldMasked(field.name, filePath) ||
-            configManager.isFieldRejected(field.name, filePath)) {
-            continue;
-        }
-        // Match patterns
-        const matchResult = patternMatcher.matchField(field);
-        if (!matchResult.matched)
-            continue;
-        // Calculate confidence
-        const scoreBreakdown = confidenceScorer.calculateScore({ field, patternMatchResult: matchResult });
-        const confidenceScore = scoreBreakdown.finalScore;
-        if (confidenceScore < 30)
-            continue; // Skip low confidence
-        // Analyze context
-        const contextAnalysis = contextAnalyzer.analyzeField(field);
-        // Determine priority based on context
-        const priority = contextAnalysis.highestRisk === 'high' ? 'high' :
-            contextAnalysis.highestRisk === 'medium' ? 'medium' : 'low';
-        // Create analysis result for suggestion engine
-        const analysisResult = {
-            field,
-            isSensitive: true,
-            confidenceScore,
-            detectedPatterns: matchResult.matchedPattern ? [matchResult.matchedPattern.type] : [],
-            reasoning: matchResult.matchedPattern
-                ? `Matched pattern: ${matchResult.matchedPattern.name}`
-                : 'Pattern matched',
-            priority,
-        };
-        // Create suggestion
-        const suggestion = suggestionEngine.createSuggestion(analysisResult);
-        suggestions.push(suggestion);
-    }
-    // Update UI components
-    if (updateUI) {
-        const allSuggestions = suggestionEngine.getSuggestions();
-        highlighter.setSuggestions(allSuggestions);
-        tooltipProvider.setSuggestions(allSuggestions);
-        updateDecorations();
-    }
-    return suggestions;
-}
-/**
- * Updates editor decorations
- */
-function updateDecorations() {
-    if (!pluginState)
-        return;
-    const editor = vscode.window.activeTextEditor;
-    if (!editor)
-        return;
-    const { highlighter, decorationType } = pluginState;
-    const filePath = editor.document.uri.fsPath;
-    const decorations = highlighter.getDecorationsForFile(filePath);
-    const vscodeDecorations = decorations.map(d => ({
-        range: new vscode.Range(d.location.startLine - 1, // Convert to 0-indexed
-        d.location.startColumn, d.location.endLine - 1, d.location.endColumn),
-        hoverMessage: d.hoverMessage,
-    }));
-    editor.setDecorations(decorationType, vscodeDecorations);
-}
-/**
- * Opens the suggestion panel
- */
-function openSuggestionPanel() {
-    if (!pluginState)
-        return;
-    const { suggestionPanel, suggestionEngine } = pluginState;
-    // Update panel with current suggestions
-    suggestionPanel.setSuggestions(suggestionEngine.getSuggestions());
-    // Create webview panel
-    const panel = vscode.window.createWebviewPanel('dataMaskingSuggestions', 'Data Masking Suggestions', vscode.ViewColumn.Two, {
-        enableScripts: true,
-    });
-    panel.webview.html = suggestionPanel.generateHtml();
-    // Handle messages from webview
-    panel.webview.onDidReceiveMessage(async (message) => {
-        switch (message.type) {
-            case 'accept':
-                await processSuggestionDecision(message.suggestionId, 'accept');
-                break;
-            case 'reject':
-                await processSuggestionDecision(message.suggestionId, 'reject');
-                break;
-            case 'defer':
-                await processSuggestionDecision(message.suggestionId, 'defer');
-                break;
-            case 'navigate':
-                navigateToSuggestion(message.suggestionId);
-                break;
-        }
-    });
-}
-/**
- * Processes a suggestion decision
- */
-async function processSuggestionDecision(suggestionId, action) {
-    if (!pluginState)
-        return;
-    const { suggestionEngine, configManager, highlighter, tooltipProvider } = pluginState;
-    const suggestion = suggestionEngine.getSuggestionById(suggestionId);
-    if (!suggestion)
-        return;
-    // Process decision
-    await suggestionEngine.processDecision(suggestionId, { action });
-    // Record in config manager
-    if (action === 'accept') {
-        await configManager.addMaskedField(suggestion);
-    }
-    else if (action === 'reject') {
-        await configManager.addRejectedField(suggestion);
-    }
-    // Record decision history
-    configManager.recordDecision(suggestionId, suggestion, { action });
-    // Update UI
-    const allSuggestions = suggestionEngine.getSuggestions();
-    highlighter.setSuggestions(allSuggestions);
-    tooltipProvider.setSuggestions(allSuggestions);
-    updateDecorations();
-    vscode.window.showInformationMessage(`Suggestion ${action}ed: ${suggestion.field.name}`);
-}
-/**
- * Navigates to a suggestion's location
- */
-function navigateToSuggestion(suggestionId) {
-    if (!pluginState)
-        return;
-    const suggestion = pluginState.suggestionEngine.getSuggestionById(suggestionId);
-    if (!suggestion)
-        return;
-    const { filePath, startLine, startColumn } = suggestion.field.location;
-    const uri = vscode.Uri.file(filePath);
-    const position = new vscode.Position(startLine - 1, startColumn);
-    vscode.window.showTextDocument(uri, {
-        selection: new vscode.Range(position, position),
-    });
-}
-/**
- * Gets the suggestion at the current cursor position
- */
-function getCurrentSuggestion() {
-    if (!pluginState)
-        return null;
-    const editor = vscode.window.activeTextEditor;
-    if (!editor)
-        return null;
-    const filePath = editor.document.uri.fsPath;
-    const line = editor.selection.active.line + 1; // Convert to 1-indexed
-    // Find the suggestion by matching the field location
-    const suggestions = pluginState.suggestionEngine.getSuggestions({
-        filePath,
-    });
-    return suggestions.find(s => s.field.location.startLine <= line &&
-        s.field.location.endLine >= line) || null;
-}
-/**
- * Exports a report
- */
-async function exportReport() {
-    if (!pluginState)
-        return;
-    const { reportGenerator, suggestionEngine } = pluginState;
-    // Get format choice
-    const format = await vscode.window.showQuickPick(['JSON', 'CSV', 'Markdown'], { placeHolder: 'Select export format' });
-    if (!format)
-        return;
-    // Generate report
-    reportGenerator.setSuggestions(suggestionEngine.getSuggestions());
-    const report = await reportGenerator.generateReport();
-    const exportFormat = format.toLowerCase();
-    const content = reportGenerator.exportReport(report, exportFormat);
-    // Get file extension
-    const extensions = {
-        json: 'json',
-        csv: 'csv',
-        markdown: 'md',
-    };
-    // Save file
-    const uri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(`masking-report.${extensions[exportFormat]}`),
-        filters: {
-            [format]: [extensions[exportFormat]],
-        },
-    });
-    if (uri) {
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
-        vscode.window.showInformationMessage(`Report exported to ${uri.fsPath}`);
-    }
-}
-/**
- * Deactivates the extension
- */
 function deactivate() {
-    console.log('Data Masking Suggestion Plugin is now deactivated');
-    pluginState = null;
+    diagnosticCollection?.dispose();
+    statusBarItem?.dispose();
+}
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+function getConfig() {
+    const cfg = vscode.workspace.getConfiguration("piiJsonChecker");
+    const patterns = cfg.get("patterns", [
+        "first_name", "firstname", "first name",
+        "last_name", "lastname", "last name",
+        "firstName", "lastName",
+    ]);
+    const severityStr = cfg.get("severity", "Warning");
+    const severityMap = {
+        Error: vscode.DiagnosticSeverity.Error,
+        Warning: vscode.DiagnosticSeverity.Warning,
+        Information: vscode.DiagnosticSeverity.Information,
+        Hint: vscode.DiagnosticSeverity.Hint,
+    };
+    return {
+        patterns,
+        severity: severityMap[severityStr] ?? vscode.DiagnosticSeverity.Warning,
+        enableLoggingDetection: cfg.get("enableLoggingDetection", true),
+        extraLoggingFunctions: cfg.get("loggingFunctions", []),
+        extraMaskingPatterns: cfg.get("maskingPatterns", []),
+    };
+}
+function normalize(s) {
+    return s.toLowerCase().replace(/[-_\s]/g, "");
+}
+function matchesPii(identifier, patterns) {
+    const norm = normalize(identifier);
+    for (const p of patterns) {
+        if (norm === normalize(p) || norm.includes(normalize(p))) {
+            return p;
+        }
+    }
+    return null;
+}
+// ---------------------------------------------------------------------------
+// Document router
+// ---------------------------------------------------------------------------
+function analyzeDocument(document) {
+    const lang = document.languageId;
+    if (!SUPPORTED_LANGUAGES.includes(lang)) {
+        return;
+    }
+    const config = getConfig();
+    const { patterns, severity } = config;
+    let diagnostics;
+    if (lang === "json" || lang === "jsonc") {
+        // JSON files: always show PII diagnostics on keys (no logging context)
+        diagnostics = analyzeJson(document, patterns, severity);
+    }
+    else {
+        // Code files: context-aware approach
+        // 1. Collect all PII field diagnostics
+        const piiDiags = analyzeDotNet(document, patterns, severity);
+        if (config.enableLoggingDetection && LOG_LANGUAGES.includes(lang)) {
+            // 2. Find which PII identifiers are used in unmasked logging
+            const loggingDiags = analyzeLoggingContext(document, patterns, config);
+            // 3. Build set of PII names that appear in unmasked logging
+            const loggedPiiNames = new Set();
+            for (const ld of loggingDiags) {
+                const piiText = document.getText(ld.range);
+                loggedPiiNames.add(normalize(piiText));
+            }
+            // 4. Only keep pii-field diagnostics for identifiers that ARE logged
+            //    If a PII identifier is never logged, suppress all warnings for it
+            const filteredPiiDiags = piiDiags.filter((d) => {
+                const text = document.getText(d.range);
+                return loggedPiiNames.has(normalize(text));
+            });
+            diagnostics = [...filteredPiiDiags, ...loggingDiags];
+        }
+        else {
+            // Logging detection disabled — show all PII diagnostics as before
+            diagnostics = piiDiags;
+        }
+    }
+    diagnosticCollection.set(document.uri, diagnostics);
+    updateStatusBar();
+}
+// ---------------------------------------------------------------------------
+// JSON analyzer
+// ---------------------------------------------------------------------------
+function analyzeJson(document, patterns, severity) {
+    const diagnostics = [];
+    const text = document.getText();
+    const keyRegex = /"([^"]+)"\s*:/g;
+    let match;
+    while ((match = keyRegex.exec(text)) !== null) {
+        const key = match[1];
+        const matched = matchesPii(key, patterns);
+        if (matched) {
+            const startPos = document.positionAt(match.index);
+            const endPos = document.positionAt(match.index + match[0].length - 1);
+            diagnostics.push(createDiagnostic(key, matched, new vscode.Range(startPos, endPos), severity));
+        }
+    }
+    return diagnostics;
+}
+// ---------------------------------------------------------------------------
+// .NET analyzer (C#, VB, Razor)
+// ---------------------------------------------------------------------------
+function analyzeDotNet(document, patterns, severity) {
+    const diagnostics = [];
+    const text = document.getText();
+    // Patterns to catch in .NET files:
+    // 1. Properties:       public string FirstName { get; set; }
+    // 2. Fields:           private string _firstName;
+    // 3. Variables:        var firstName = ...;
+    // 4. Parameters:       (string firstName, ...)
+    // 5. Column/JsonProp:  [Column("first_name")] or [JsonPropertyName("first_name")]
+    // 6. String literals:  "first_name" or "FirstName"
+    const dotnetPatterns = [
+        // Property / field / variable declarations – capture the identifier
+        /\b(?:public|private|protected|internal|static|readonly|virtual|override|abstract|async)\s+[\w<>\[\]?,\s]+\s+(\w+)\s*[{;=]/g,
+        // var / let declarations
+        /\b(?:var|let|const)\s+(\w+)\s*[=;]/g,
+        // Method parameters
+        /(?:[\w<>\[\]?]+)\s+(\w+)\s*[,)]/g,
+        // Attribute string values: [Column("first_name")] [JsonPropertyName("lastName")]
+        /\[\s*(?:Column|JsonPropertyName|JsonProperty|DataMember|Display|MapTo)\s*\(\s*"([^"]+)"\s*\)/g,
+        // String literals containing PII identifiers
+        /"([^"]{2,50})"/g,
+    ];
+    for (const regex of dotnetPatterns) {
+        let match;
+        // Reset lastIndex for each regex
+        regex.lastIndex = 0;
+        while ((match = regex.exec(text)) !== null) {
+            const identifier = match[1];
+            if (!identifier) {
+                continue;
+            }
+            const matched = matchesPii(identifier, patterns);
+            if (matched) {
+                // Calculate position of the captured group (group 1)
+                const groupStart = match.index + match[0].indexOf(identifier);
+                const startPos = document.positionAt(groupStart);
+                const endPos = document.positionAt(groupStart + identifier.length);
+                const range = new vscode.Range(startPos, endPos);
+                // Avoid duplicate diagnostics on the same range
+                const isDuplicate = diagnostics.some((d) => d.range.isEqual(range));
+                if (!isDuplicate) {
+                    diagnostics.push(createDiagnostic(identifier, matched, range, severity));
+                }
+            }
+        }
+    }
+    return diagnostics;
+}
+// ---------------------------------------------------------------------------
+// Logging context analyzer
+// ---------------------------------------------------------------------------
+const DOTNET_LOG_FUNCTIONS = [
+    "Console.WriteLine", "Console.Write",
+    "Debug.WriteLine", "Debug.Write", "Debug.Log",
+    "Trace.WriteLine", "Trace.Write",
+    "LogInformation", "LogWarning", "LogError", "LogDebug", "LogTrace", "LogCritical",
+    "Log.Information", "Log.Warning", "Log.Error", "Log.Debug", "Log.Verbose", "Log.Fatal",
+];
+const JS_LOG_FUNCTIONS = [
+    "console.log", "console.warn", "console.error",
+    "console.info", "console.debug", "console.trace",
+];
+const SHORT_LOG_METHODS = ["Info", "Warn", "Error", "Debug", "Fatal", "Trace"];
+const MASK_METHOD_PATTERNS = [
+    ".Mask(", ".mask(", ".Redact(", ".redact(",
+    ".Anonymize(", ".anonymize(", ".Hash(", ".hash(",
+];
+const MASK_STRING_LITERALS = [
+    '***', '[REDACTED]', '[MASKED]', 'XXX', '****',
+];
+function findLoggingSpans(text, lang, extraFunctions) {
+    const spans = [];
+    const isJs = ["javascript", "typescript", "javascriptreact", "typescriptreact"].includes(lang);
+    const funcs = [
+        ...(isJs ? JS_LOG_FUNCTIONS : DOTNET_LOG_FUNCTIONS),
+        ...extraFunctions,
+    ];
+    for (const func of funcs) {
+        const escaped = func.replace(/\./g, "\\.");
+        const pattern = new RegExp(`\\b${escaped}\\s*\\(`, "g");
+        let m;
+        while ((m = pattern.exec(text)) !== null) {
+            const parenStart = text.indexOf("(", m.index);
+            if (parenStart === -1) {
+                continue;
+            }
+            const argEnd = findMatchingParen(text, parenStart);
+            if (argEnd !== -1) {
+                spans.push({ argStart: parenStart + 1, argEnd });
+            }
+        }
+    }
+    // Short method names (Info, Warn, etc.) require dot prefix
+    if (!isJs) {
+        for (const method of SHORT_LOG_METHODS) {
+            const pattern = new RegExp(`\\.${method}\\s*\\(`, "g");
+            let m;
+            while ((m = pattern.exec(text)) !== null) {
+                const parenStart = text.indexOf("(", m.index);
+                if (parenStart === -1) {
+                    continue;
+                }
+                const argEnd = findMatchingParen(text, parenStart);
+                if (argEnd !== -1) {
+                    spans.push({ argStart: parenStart + 1, argEnd });
+                }
+            }
+        }
+    }
+    return spans;
+}
+function findMatchingParen(text, openPos) {
+    let depth = 1;
+    let i = openPos + 1;
+    while (i < text.length && depth > 0) {
+        const ch = text[i];
+        if (ch === "(") {
+            depth++;
+        }
+        else if (ch === ")") {
+            depth--;
+        }
+        else if (ch === '"' || ch === "'" || ch === "`") {
+            i++;
+            while (i < text.length && text[i] !== ch) {
+                if (text[i] === "\\") {
+                    i++;
+                }
+                i++;
+            }
+        }
+        if (depth > 0) {
+            i++;
+        }
+    }
+    return depth === 0 ? i : -1;
+}
+function isMasked(argText, relStart, extraMaskPatterns) {
+    const allMaskMethods = [...MASK_METHOD_PATTERNS, ...extraMaskPatterns];
+    // Check if PII is inside a mask method call
+    for (const mp of allMaskMethods) {
+        const base = mp.endsWith("(") ? mp.slice(0, -1) : mp;
+        const idx = argText.lastIndexOf(base, relStart);
+        if (idx !== -1) {
+            const afterBase = argText.indexOf("(", idx + base.length);
+            if (afterBase !== -1 && afterBase <= relStart) {
+                return true;
+            }
+        }
+    }
+    // Check if mask string literals appear in the same logging args
+    for (const ms of MASK_STRING_LITERALS) {
+        if (argText.includes(ms)) {
+            return true;
+        }
+    }
+    return false;
+}
+function analyzeLoggingContext(document, patterns, config) {
+    const diagnostics = [];
+    const text = document.getText();
+    const lang = document.languageId;
+    const spans = findLoggingSpans(text, lang, config.extraLoggingFunctions);
+    if (spans.length === 0) {
+        return diagnostics;
+    }
+    // Scan each logging span for PII identifiers
+    const piiRegex = /\b(\w+)\b/g;
+    for (const span of spans) {
+        const argText = text.substring(span.argStart, span.argEnd);
+        piiRegex.lastIndex = 0;
+        let m;
+        while ((m = piiRegex.exec(argText)) !== null) {
+            const identifier = m[1];
+            const matched = matchesPii(identifier, patterns);
+            if (!matched) {
+                continue;
+            }
+            const relStart = m.index;
+            if (isMasked(argText, relStart, config.extraMaskingPatterns)) {
+                continue;
+            }
+            const absStart = span.argStart + relStart;
+            const startPos = document.positionAt(absStart);
+            const endPos = document.positionAt(absStart + identifier.length);
+            const range = new vscode.Range(startPos, endPos);
+            const isDuplicate = diagnostics.some((d) => d.range.isEqual(range));
+            if (!isDuplicate) {
+                diagnostics.push(createLoggingDiagnostic(identifier, matched, range));
+            }
+        }
+    }
+    return diagnostics;
+}
+function createLoggingDiagnostic(identifier, _matchedPattern, range) {
+    const diag = new vscode.Diagnostic(range, `⚠️ PII "${identifier}" is being logged without masking. This may violate data privacy regulations (GDPR, PDPA, CCPA). Consider using a masking utility, e.g. MaskHelper.Mask(${identifier})`, vscode.DiagnosticSeverity.Warning);
+    diag.source = DIAGNOSTIC_SOURCE;
+    diag.code = {
+        value: "pii-logging-unmasked",
+        target: vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"),
+    };
+    diag.tags = [vscode.DiagnosticTag.Unnecessary];
+    diag.relatedInformation = [
+        new vscode.DiagnosticRelatedInformation(new vscode.Location(vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"), new vscode.Position(0, 0)), "PII data should be masked before logging to prevent data leaks"),
+    ];
+    return diag;
+}
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+function createDiagnostic(identifier, matchedPattern, range, severity) {
+    const diag = new vscode.Diagnostic(range, `⚠️ Potential PII detected: "${identifier}" matches pattern "${matchedPattern}". This field may contain personally identifiable information. Consider encrypting, hashing, or removing this field to comply with data privacy regulations (GDPR, PDPA, CCPA).`, severity);
+    diag.source = DIAGNOSTIC_SOURCE;
+    diag.code = {
+        value: "pii-field",
+        target: vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"),
+    };
+    // Tag as "Unnecessary" so the editor fades the code (visual hint like SonarQube)
+    diag.tags = [vscode.DiagnosticTag.Unnecessary];
+    // Add related information pointing to privacy docs
+    diag.relatedInformation = [
+        new vscode.DiagnosticRelatedInformation(new vscode.Location(vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"), new vscode.Position(0, 0)), "Learn more about PII and data privacy regulations"),
+    ];
+    return diag;
+}
+// ---------------------------------------------------------------------------
+// Notification – shown only when a file is first opened
+// ---------------------------------------------------------------------------
+function showPiiNotification(document) {
+    const diags = diagnosticCollection.get(document.uri);
+    const count = diags?.length ?? 0;
+    if (count === 0) {
+        return;
+    }
+    const fileName = document.uri.path.split("/").pop() ?? document.uri.fsPath;
+    vscode.window
+        .showWarningMessage(`PII Checker: Found ${count} potential PII field(s) in ${fileName}`, "Show Problems")
+        .then((action) => {
+        if (action === "Show Problems") {
+            vscode.commands.executeCommand("workbench.actions.view.problems");
+        }
+    });
+}
+// ---------------------------------------------------------------------------
+// Status bar – shows PII count for the active file
+// ---------------------------------------------------------------------------
+function updateStatusBar() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        statusBarItem.hide();
+        return;
+    }
+    const diags = diagnosticCollection.get(editor.document.uri);
+    const count = diags?.length ?? 0;
+    if (count > 0) {
+        statusBarItem.text = `$(warning) PII: ${count} issue${count > 1 ? "s" : ""}`;
+        statusBarItem.tooltip = `${count} potential PII field(s) detected. Click to open Problems panel.`;
+        statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+        statusBarItem.show();
+    }
+    else {
+        statusBarItem.hide();
+    }
+}
+// ---------------------------------------------------------------------------
+// Code Action provider – quick-fix to suppress warnings
+// ---------------------------------------------------------------------------
+class PiiCodeActionProvider {
+    provideCodeActions(document, _range, context) {
+        const actions = [];
+        for (const diag of context.diagnostics) {
+            if (diag.source !== DIAGNOSTIC_SOURCE) {
+                continue;
+            }
+            // For logging-unmasked diagnostics, offer wrap with mask
+            if (diag.code &&
+                typeof diag.code === "object" &&
+                "value" in diag.code &&
+                diag.code.value === "pii-logging-unmasked") {
+                const piiText = document.getText(diag.range);
+                const wrapAction = new vscode.CodeAction("Wrap with masking function", vscode.CodeActionKind.QuickFix);
+                wrapAction.edit = new vscode.WorkspaceEdit();
+                wrapAction.edit.replace(document.uri, diag.range, `MaskHelper.Mask(${piiText})`);
+                wrapAction.diagnostics = [diag];
+                wrapAction.isPreferred = true;
+                actions.push(wrapAction);
+            }
+            // Suppress comment for all PII diagnostics
+            const suppressAction = new vscode.CodeAction("Suppress PII warning (add comment)", vscode.CodeActionKind.QuickFix);
+            const line = diag.range.start.line;
+            const indent = document.lineAt(line).text.match(/^\s*/)?.[0] ?? "";
+            const lang = document.languageId;
+            const comment = lang === "vb"
+                ? `${indent}' pii-checker: suppress`
+                : `${indent}// pii-checker: suppress`;
+            suppressAction.edit = new vscode.WorkspaceEdit();
+            suppressAction.edit.insert(document.uri, new vscode.Position(line, 0), comment + "\n");
+            suppressAction.diagnostics = [diag];
+            suppressAction.isPreferred = false;
+            actions.push(suppressAction);
+        }
+        return actions;
+    }
 }
 //# sourceMappingURL=extension.js.map
