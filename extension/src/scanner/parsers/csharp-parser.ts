@@ -89,17 +89,18 @@ export class CSharpParser implements ILanguageParser {
         }
       }
 
-      // Update brace depth
+      // Update brace depth BEFORE checking scope exits
+      // This fixes Allman brace style support where opening brace is on a new line
       braceDepth += openBraces - closeBraces;
 
-      // Check if we've exited the current method
-      if (methodStartDepth >= 0 && braceDepth <= methodStartDepth) {
+      // Check if we've exited the current method (only on closing braces)
+      if (methodStartDepth >= 0 && braceDepth <= methodStartDepth && closeBraces > 0) {
         currentMethod = null;
         methodStartDepth = -1;
       }
 
-      // Check if we've exited the current class
-      if (classStartDepth >= 0 && braceDepth <= classStartDepth) {
+      // Check if we've exited the current class (only on closing braces)
+      if (classStartDepth >= 0 && braceDepth <= classStartDepth && closeBraces > 0) {
         currentClass = null;
         currentRecord = null;
         classStartDepth = -1;

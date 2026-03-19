@@ -1,0 +1,73 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "firstName": "Michael",
+      "lastName": "Brown",
+      "email": "michael.brown@example.com",
+      "phoneNumber": "+1-555-234-5678",
+      "ssn": "234-56-7890",
+      "dateOfBirth": "1988-03-15",
+      "address": "456 Oak Avenue, Los Angeles, CA 90001",
+      "password": "hashed_password_abc123",
+      "apiKey": "api_key_xyz789abc456",
+      "creditCardNumber": "4532-1234-5678-9012",
+      "cvv": "123",
+      "bankAccountNumber": "9876543210",
+      "routingNumber": "021000089"
+    },
+    {
+      "id": 2,
+      "firstName": "Emily",
+      "lastName": "Davis",
+      "email": "emily.davis@example.com",
+      "phoneNumber": "+1-555-345-6789",
+      "ssn": "345-67-8901",
+      "dateOfBirth": "1992-07-22",
+      "address": "789 Pine Street, Chicago, IL 60601",
+      "password": "another_hashed_pass",
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "creditCardNumber": "5425-2334-3010-9903",
+      "cvv": "456",
+      "iban": "DE89370400440532013000"
+    }
+  ],
+  "patients": [
+    {
+      "patientId": "PAT-001",
+      "medicalRecordNumber": "MRN-456789",
+      "patientName": "Robert Wilson",
+      "ssn": "567-89-0123",
+      "dateOfBirth": "1965-11-30",
+      "diagnosis": "Hypertension",
+      "diagnosisCode": "I10",
+      "treatment": "Lisinopril 10mg daily",
+      "prescriptionInfo": "Rx#67890",
+      "insuranceId": "INS-XYZ-789",
+      "medicareId": "1EG4-TE5-MK72",
+      "labResults": {
+        "bloodPressure": "145/95",
+        "cholesterol": 220,
+        "glucose": 110
+      }
+    }
+  ],
+  "transactions": [
+    {
+      "transactionId": "TXN-001",
+      "cardNumber": "4111111111111111",
+      "cardHolderName": "John Smith",
+      "expirationDate": "12/25",
+      "cvv": "789",
+      "amount": 150.00,
+      "bankAccountNumber": "1122334455",
+      "swiftCode": "CHASUS33"
+    }
+  ],
+  "config": {
+    "databasePassword": "db_secret_password_123",
+    "apiSecret": "super_secret_api_key_abc",
+    "jwtSecret": "jwt_signing_secret_xyz",
+    "encryptionKey": "aes256_encryption_key_32chars!!"
+  }
+}

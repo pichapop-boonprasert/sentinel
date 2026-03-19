@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TestData>
+  <Users>
+    <User id="1">
+      <FirstName>Christopher</FirstName>
+      <LastName>Taylor</LastName>
+      <Email>christopher.taylor@example.com</Email>
+      <PhoneNumber>+1-555-678-9012</PhoneNumber>
+      <SSN>012-34-5678</SSN>
+      <DateOfBirth>1987-12-05</DateOfBirth>
+      <Address>890 Birch Road, Denver, CO 80201</Address>
+      <Password>encrypted_password_xyz</Password>
+      <ApiKey>api_key_test_12345</ApiKey>
+    </User>
+  </Users>
+  
+  <Patients>
+    <Patient id="PAT-004">
+      <MedicalRecordNumber>MRN-111222</MedicalRecordNumber>
+      <PatientName>Amanda White</PatientName>
+      <SSN>234-56-7890</SSN>
+      <Diagnosis>Migraine</Diagnosis>
+      <DiagnosisCode>G43.909</DiagnosisCode>
+      <Treatment>Sumatriptan 50mg as needed</Treatment>
+      <InsuranceId>INS-JKL-345678</InsuranceId>
+      <MedicareId>2FH5-TG6-NK83</MedicareId>
+    </Patient>
+  </Patients>
+  
+  <Payments>
+    <Payment id="PAY-001">
+      <CardNumber>4532-9876-5432-1098</CardNumber>
+      <CardHolderName>Christopher Taylor</CardHolderName>
+      <ExpirationDate>03/27</ExpirationDate>
+      <CVV>567</CVV>
+      <BankAccountNumber>6677889900</BankAccountNumber>
+      <RoutingNumber>021000089</RoutingNumber>
+    </Payment>
+  </Payments>
+</TestData>
