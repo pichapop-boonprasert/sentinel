@@ -1,0 +1,4 @@
+export { isSupported, getLanguage, getExtension, SUPPORTED_EXTENSIONS, SUPPORTED_EXTENSION_LIST, } from './language-support';
+export { ILanguageParser, ParseResult, createCodeLocation, extractSurroundingCode, extractComments, JavaScriptParser, TypeScriptParser, PythonParser, JavaParser, JsonParser, getParser, getAllParsers, getSupportedLanguages, isLanguageSupported, } from './parsers';
+export { Scanner, IScannerLogger, IFileReader, ScanProgress, ScanProgressCallback, defaultLogger, createSyntaxError, createFileNotFoundError, createPermissionDeniedError, createFileTooLargeError, createUnsupportedLanguageError, scanMultipleFiles, getSuccessfulScans, getFailedScans, collectAllErrors, collectAllFields, } from './scanner';
+//# sourceMappingURL=index.d.ts.map

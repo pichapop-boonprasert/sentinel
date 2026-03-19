@@ -1,0 +1,163 @@
+{
+  "name": "data-masking-suggestion-plugin",
+  "displayName": "Data Masking Suggestion Plugin",
+  "description": "AI-powered detection and masking suggestions for sensitive data fields in source code",
+  "version": "0.0.1",
+  "publisher": "kiro",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dataMasking.scanWorkspace",
+        "title": "Data Masking: Scan Workspace"
+      },
+      {
+        "command": "dataMasking.scanCurrentFile",
+        "title": "Data Masking: Scan Current File"
+      },
+      {
+        "command": "dataMasking.openPanel",
+        "title": "Data Masking: Open Suggestion Panel"
+      },
+      {
+        "command": "dataMasking.acceptSuggestion",
+        "title": "Data Masking: Accept Suggestion"
+      },
+      {
+        "command": "dataMasking.rejectSuggestion",
+        "title": "Data Masking: Reject Suggestion"
+      },
+      {
+        "command": "dataMasking.deferSuggestion",
+        "title": "Data Masking: Defer Suggestion"
+      },
+      {
+        "command": "dataMasking.generateReport",
+        "title": "Data Masking: Generate Report"
+      },
+      {
+        "command": "dataMasking.exportConfig",
+        "title": "Data Masking: Export Configuration"
+      },
+      {
+        "command": "dataMasking.importConfig",
+        "title": "Data Masking: Import Configuration"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dataMaskingPanel",
+          "title": "Data Masking",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dataMaskingPanel": [
+        {
+          "id": "dataMaskingSuggestions",
+          "name": "Suggestions",
+          "type": "webview"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "dataMasking.acceptSuggestion",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "dataMasking.rejectSuggestion",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r"
+      },
+      {
+        "command": "dataMasking.deferSuggestion",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d"
+      },
+      {
+        "command": "dataMasking.openPanel",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      }
+    ],
+    "configuration": {
+      "title": "Data Masking",
+      "properties": {
+        "dataMasking.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files when saved"
+        },
+        "dataMasking.scanOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files when opened"
+        },
+        "dataMasking.maxCpuPercent": {
+          "type": "number",
+          "default": 25,
+          "description": "Maximum CPU usage percentage for background analysis"
+        },
+        "dataMasking.scanFrequencyMs": {
+          "type": "number",
+          "default": 1000,
+          "description": "Minimum time between scans in milliseconds"
+        },
+        "dataMasking.cacheEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable caching of analysis results"
+        },
+        "dataMasking.cacheTtlMs": {
+          "type": "number",
+          "default": 300000,
+          "description": "Cache time-to-live in milliseconds"
+        },
+        "dataMasking.onDemandThreshold": {
+          "type": "number",
+          "default": 1000,
+          "description": "Number of files above which on-demand scanning is used"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "fast-check": "^3.14.0",
+    "typescript": "^5.3.2",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.23.0",
+    "@babel/traverse": "^7.23.0",
+    "@babel/types": "^7.23.0"
+  }
+}
