@@ -32,6 +32,8 @@ import {
   Priority,
 } from './types';
 import { builtInPatterns } from './analyzer/patterns';
+import { ScanResultsAggregator, FileListView } from './scan-results';
+import { FileNavigationHandler, createFileNavigationHandler } from './navigation';
 
 /**
  * Plugin state container
@@ -50,6 +52,9 @@ interface PluginState {
   progressIndicator: ProgressIndicator;
   decorationType: vscode.TextEditorDecorationType;
   statusBarItem: vscode.StatusBarItem;
+  scanResultsAggregator: ScanResultsAggregator;
+  fileListView: FileListView;
+  fileNavigationHandler: FileNavigationHandler;
 }
 
 let pluginState: PluginState | null = null;
@@ -160,6 +165,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const tooltipProvider = createTooltipProvider();
   const progressIndicator = createProgressIndicator();
 
+  // Initialize scan results and navigation components
+  const scanResultsAggregator = new ScanResultsAggregator();
+  const fileListView = new FileListView();
+  const fileNavigationHandler = createFileNavigationHandler(scanResultsAggregator, highlighter);
+
+  // Wire FileListView selection to FileNavigationHandler
+  fileListView.onFileSelected((filePath: string) => {
+    fileNavigationHandler.navigateToFile(filePath);
+  });
+
   // Register built-in patterns
   for (const pattern of builtInPatterns) {
     patternMatcher.registerPattern(pattern);
@@ -196,6 +211,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     progressIndicator,
     decorationType,
     statusBarItem,
+    scanResultsAggregator,
+    fileListView,
+    fileNavigationHandler,
   };
 
   // Load configuration
@@ -328,6 +346,15 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }
     })
   );
+
+  // Show scan results - Validates: Requirements 4.2, 4.3
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dataMasking.showScanResults', async () => {
+      if (!pluginState) return;
+      // FileListView.show() handles empty state by prompting user to run scan
+      await pluginState.fileListView.show();
+    })
+  );
 }
 
 
@@ -413,7 +440,7 @@ async function scanWorkspace(): Promise<void> {
     return;
   }
 
-  const { progressIndicator } = pluginState;
+  const { progressIndicator, scanResultsAggregator, fileListView } = pluginState;
 
   // Get all files
   const files = await vscode.workspace.findFiles(
@@ -437,6 +464,17 @@ async function scanWorkspace(): Promise<void> {
 
   progressIndicator.complete(allSuggestions.length);
   updateDecorations();
+
+  // Store results in aggregator and show file list
+  scanResultsAggregator.storeResults(allSuggestions);
+  
+  if (allSuggestions.length > 0) {
+    // Update file list view with aggregated results and show it
+    fileListView.updateResults(scanResultsAggregator.getAggregatedResults());
+    await fileListView.show();
+  } else {
+    vscode.window.showInformationMessage('No sensitive data found in workspace');
+  }
 
   vscode.window.showInformationMessage(
     `Scan complete: Found ${allSuggestions.length} sensitive fields in ${files.length} files`

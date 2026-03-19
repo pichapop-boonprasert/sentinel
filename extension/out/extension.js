@@ -53,6 +53,8 @@ const config_manager_1 = require("./config/config-manager");
 const report_1 = require("./report");
 const ui_1 = require("./ui");
 const patterns_1 = require("./analyzer/patterns");
+const scan_results_1 = require("./scan-results");
+const navigation_1 = require("./navigation");
 let pluginState = null;
 /**
  * VS Code file system adapter
@@ -154,6 +156,14 @@ async function activate(context) {
     const highlighter = (0, ui_1.createInlineHighlighter)();
     const tooltipProvider = (0, ui_1.createTooltipProvider)();
     const progressIndicator = (0, ui_1.createProgressIndicator)();
+    // Initialize scan results and navigation components
+    const scanResultsAggregator = new scan_results_1.ScanResultsAggregator();
+    const fileListView = new scan_results_1.FileListView();
+    const fileNavigationHandler = (0, navigation_1.createFileNavigationHandler)(scanResultsAggregator, highlighter);
+    // Wire FileListView selection to FileNavigationHandler
+    fileListView.onFileSelected((filePath) => {
+        fileNavigationHandler.navigateToFile(filePath);
+    });
     // Register built-in patterns
     for (const pattern of patterns_1.builtInPatterns) {
         patternMatcher.registerPattern(pattern);
@@ -184,6 +194,9 @@ async function activate(context) {
         progressIndicator,
         decorationType,
         statusBarItem,
+        scanResultsAggregator,
+        fileListView,
+        fileNavigationHandler,
     };
     // Load configuration
     await configManager.load();
@@ -271,6 +284,13 @@ function registerCommands(context) {
             await processSuggestionDecision(suggestion.id, 'defer');
         }
     }));
+    // Show scan results - Validates: Requirements 4.2, 4.3
+    context.subscriptions.push(vscode.commands.registerCommand('dataMasking.showScanResults', async () => {
+        if (!pluginState)
+            return;
+        // FileListView.show() handles empty state by prompting user to run scan
+        await pluginState.fileListView.show();
+    }));
 }
 /**
  * Registers file event handlers
@@ -336,7 +356,7 @@ async function scanWorkspace() {
         vscode.window.showWarningMessage('No workspace folder open');
         return;
     }
-    const { progressIndicator } = pluginState;
+    const { progressIndicator, scanResultsAggregator, fileListView } = pluginState;
     // Get all files
     const files = await vscode.workspace.findFiles('**/*.{js,ts,jsx,tsx,py,java,cs,json}', '**/node_modules/**');
     progressIndicator.startScanning(files.length);
@@ -353,6 +373,16 @@ async function scanWorkspace() {
     }
     progressIndicator.complete(allSuggestions.length);
     updateDecorations();
+    // Store results in aggregator and show file list
+    scanResultsAggregator.storeResults(allSuggestions);
+    if (allSuggestions.length > 0) {
+        // Update file list view with aggregated results and show it
+        fileListView.updateResults(scanResultsAggregator.getAggregatedResults());
+        await fileListView.show();
+    }
+    else {
+        vscode.window.showInformationMessage('No sensitive data found in workspace');
+    }
     vscode.window.showInformationMessage(`Scan complete: Found ${allSuggestions.length} sensitive fields in ${files.length} files`);
 }
 /**
