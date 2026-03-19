@@ -22,7 +22,7 @@
         "title": "Data Masking: Scan Workspace"
       },
       {
-        "command": "dataMasking.scanCurrentFile",
+        "command": "dataMasking.scanFile",
         "title": "Data Masking: Scan Current File"
       },
       {
@@ -42,7 +42,7 @@
         "title": "Data Masking: Defer Suggestion"
       },
       {
-        "command": "dataMasking.generateReport",
+        "command": "dataMasking.exportReport",
         "title": "Data Masking: Generate Report"
       },
       {
