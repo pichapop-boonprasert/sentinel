@@ -1,0 +1,8 @@
+[2024-01-15 10:30:45] INFO: Application started
+[2024-01-15 10:30:46] INFO: User login attempt - email: john.doe@example.com, password: ********
+[2024-01-15 10:30:47] DEBUG: Retrieved user SSN: 123-45-6789
+[2024-01-15 10:30:48] INFO: Payment processed - CardNumber: 4111-1111-1111-1111, CVV: 123
+[2024-01-15 10:30:49] WARN: Sensitive data logged - CreditCardNumber: 4532-1234-5678-9012
+[2024-01-15 10:30:50] INFO: Patient record accessed - PatientId: PAT-2024-001, SSN: 987-65-4321
+[2024-01-15 10:30:51] DEBUG: API Key used: sk-1234567890abcdef
+[2024-01-15 10:30:52] INFO: Bank transfer initiated - AccountNumber: 9876543210, RoutingNumber: 021000021
