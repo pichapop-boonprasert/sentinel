@@ -28,6 +28,45 @@ const LOG_LANGUAGES = [
 let diagnosticCollection: vscode.DiagnosticCollection;
 let statusBarItem: vscode.StatusBarItem;
 
+// File extensions for workspace-wide scanning (.NET and JSON only)
+const SUPPORTED_FILE_GLOBS = [
+  "**/*.json",
+  "**/*.cs",
+  "**/*.vb",
+  "**/*.cshtml",
+  "**/*.razor",
+];
+
+const WORKSPACE_SCAN_GLOB = "{" + SUPPORTED_FILE_GLOBS.join(",") + "}";
+const WORKSPACE_EXCLUDE_GLOB = "{**/node_modules/**,**/bin/**,**/obj/**,**/out/**,**/.git/**}";
+
+/**
+ * Analyze a file by URI — opens it as a text document and runs analysis.
+ * Used for workspace-wide scanning of files that are not currently open.
+ */
+async function analyzeFileByUri(uri: vscode.Uri): Promise<void> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    analyzeDocument(doc);
+  } catch {
+    // File may be binary or inaccessible — skip silently
+  }
+}
+
+/**
+ * Scan the entire workspace for supported files and analyze them.
+ */
+async function scanWorkspace(): Promise<void> {
+  const files = await vscode.workspace.findFiles(
+    WORKSPACE_SCAN_GLOB,
+    WORKSPACE_EXCLUDE_GLOB
+  );
+  for (const uri of files) {
+    await analyzeFileByUri(uri);
+  }
+  updateStatusBar();
+}
+
 export function activate(context: vscode.ExtensionContext) {
   diagnosticCollection =
     vscode.languages.createDiagnosticCollection("pii-checker");
@@ -40,8 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.command = "workbench.actions.view.problems";
   context.subscriptions.push(statusBarItem);
 
+  // Watch for file creation/deletion in the workspace
+  const fileWatcher = vscode.workspace.createFileSystemWatcher(WORKSPACE_SCAN_GLOB);
+
   context.subscriptions.push(
     diagnosticCollection,
+    fileWatcher,
+
+    // Open documents — re-analyze and notify
     vscode.workspace.onDidOpenTextDocument((doc) => {
       analyzeDocument(doc);
       showPiiNotification(doc);
@@ -49,15 +94,31 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeTextDocument((e) =>
       analyzeDocument(e.document)
     ),
-    vscode.workspace.onDidCloseTextDocument((doc) => {
-      diagnosticCollection.delete(doc.uri);
+
+    // When a file is closed, keep its diagnostics (workspace-wide coverage)
+    // Only update the status bar to reflect the new active file context
+    vscode.workspace.onDidCloseTextDocument(() => updateStatusBar()),
+
+    vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar()),
+
+    // New file created in workspace — analyze it
+    fileWatcher.onDidCreate((uri) => analyzeFileByUri(uri)),
+
+    // File changed on disk (external edit) — re-analyze
+    fileWatcher.onDidChange((uri) => analyzeFileByUri(uri)),
+
+    // File deleted — remove its diagnostics
+    fileWatcher.onDidDelete((uri) => {
+      diagnosticCollection.delete(uri);
       updateStatusBar();
-    }),
-    vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar())
+    })
   );
 
-  // Analyze already-open files
+  // Analyze already-open files immediately
   vscode.workspace.textDocuments.forEach(analyzeDocument);
+
+  // Scan the full workspace in the background
+  scanWorkspace();
 
   // Register code action provider for all supported languages
   const documentSelectors: vscode.DocumentFilter[] = SUPPORTED_LANGUAGES.map(
@@ -275,18 +336,20 @@ function showPiiNotification(document: vscode.TextDocument) {
 // ---------------------------------------------------------------------------
 
 function updateStatusBar() {
+  // Count total issues across all tracked files
+  let totalCount = 0;
+  diagnosticCollection.forEach((uri, diags) => {
+    totalCount += diags.length;
+  });
+
   const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    statusBarItem.hide();
-    return;
-  }
+  const activeCount = editor
+    ? (diagnosticCollection.get(editor.document.uri)?.length ?? 0)
+    : 0;
 
-  const diags = diagnosticCollection.get(editor.document.uri);
-  const count = diags?.length ?? 0;
-
-  if (count > 0) {
-    statusBarItem.text = `$(warning) PII: ${count} issue${count > 1 ? "s" : ""}`;
-    statusBarItem.tooltip = `${count} potential PII field(s) detected. Click to open Problems panel.`;
+  if (totalCount > 0) {
+    statusBarItem.text = `$(warning) PII: ${activeCount} / ${totalCount}`;
+    statusBarItem.tooltip = `${activeCount} issue(s) in current file, ${totalCount} total across workspace. Click to open Problems panel.`;
     statusBarItem.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground"
     );

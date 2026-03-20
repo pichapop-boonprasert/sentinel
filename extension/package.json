@@ -9,16 +9,7 @@
   },
   "categories": ["Linters"],
   "activationEvents": [
-    "onLanguage:json",
-    "onLanguage:jsonc",
-    "onLanguage:csharp",
-    "onLanguage:vb",
-    "onLanguage:razor",
-    "onLanguage:aspnetcorerazor",
-    "onLanguage:javascript",
-    "onLanguage:typescript",
-    "onLanguage:javascriptreact",
-    "onLanguage:typescriptreact"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
