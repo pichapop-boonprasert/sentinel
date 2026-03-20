@@ -1,6 +1,6 @@
 # Product Overview
 
-PII Checker is a VS Code extension that detects sensitive data fields (PII, financial, health, credentials) in code and JSON files and surfaces inline diagnostics with compliance context.
+Sentinel (publisher: `dandadan-beun-beun-beun`, package name: `sentinel`) is a VS Code extension that detects sensitive data fields (PII, financial, health, credentials) in code and JSON files and surfaces inline diagnostics with compliance context.
 
 ## Core Capabilities
 

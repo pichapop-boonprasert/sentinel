@@ -17,7 +17,9 @@ extension/                    # VS Code extension (TypeScript)
 │       └── patternRegistry.ts    # Standalone registry: merges defaults + custom patterns, handles exclusions (PatternRegistry class)
 ├── test-samples/             # Sample files for manual testing
 ├── out/                      # Compiled JS output
-├── package.json              # Extension manifest and VS Code contribution points
+├── logo.png                  # Extension icon (referenced in package.json as "icon")
+├── LICENSE                   # MIT license
+├── package.json              # Extension manifest (name: sentinel, publisher: dandadan-beun-beun-beun)
 └── tsconfig.json
 
 project/                      # Demo ASP.NET Core Web API (intentionally insecure)

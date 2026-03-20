@@ -16,6 +16,18 @@
 
 No runtime dependencies — the extension only uses the VS Code API.
 
+### Packaging
+
+- Tool: `@vscode/vsce` (installed as devDependency)
+- Output: `sentinel-0.1.0.vsix`
+- Extension ID: `dandadan-beun-beun-beun.sentinel`
+- Icon: `logo.png`
+
+```bash
+# From extension/ directory:
+node -e "const {createVSIX} = require('@vscode/vsce'); createVSIX({cwd: '.', allowMissingRepository: true, skipLicense: true}).then(() => console.log('DONE')).catch(e => console.error('ERROR:', e.message))"
+```
+
 ### Commands
 
 ```bash

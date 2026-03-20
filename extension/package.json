@@ -1,13 +1,16 @@
 {
-  "name": "pii-json-checker",
-  "displayName": "PII JSON Checker",
+  "name": "sentinel",
+  "displayName": "Sentinel",
+  "publisher": "dandadan-beun-beun-beun",
+  "icon": "logo.png",
   "description": "Detects potential PII fields (first name, last name) in JSON and .NET files and shows inline warnings like SonarQube",
   "version": "0.1.0",
-  "publisher": "your-publisher-id",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Linters"],
+  "categories": [
+    "Linters"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -19,7 +22,12 @@
         "piiJsonChecker.severity": {
           "type": "string",
           "default": "Warning",
-          "enum": ["Error", "Warning", "Information", "Hint"],
+          "enum": [
+            "Error",
+            "Warning",
+            "Information",
+            "Hint"
+          ],
           "enumDescriptions": [
             "Show as errors (red underline) - use for strict compliance enforcement",
             "Show as warnings (yellow underline) - recommended default for most projects",
@@ -131,8 +139,9 @@
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
     "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.1",
     "typescript": "^5.3.0"
   }
 }
