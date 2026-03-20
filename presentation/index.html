@@ -559,6 +559,208 @@
     color: var(--text-dim);
   }
 
+  /* ── Presentation Controls ── */
+  .presentation-controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(18, 18, 26, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 20px;
+    z-index: 1000;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    transition: opacity 0.3s, transform 0.3s;
+  }
+
+  .presentation-controls.hidden {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    pointer-events: none;
+  }
+
+  .ctrl-btn {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+  }
+
+  .ctrl-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent-light);
+    transform: scale(1.05);
+  }
+
+  .ctrl-btn:active {
+    transform: scale(0.95);
+  }
+
+  .ctrl-btn.active {
+    background: var(--accent);
+    border-color: var(--accent-light);
+  }
+
+  .slide-indicator {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--text);
+    min-width: 70px;
+    text-align: center;
+  }
+
+  /* ── Progress Bar ── */
+  .progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light), #fd79a8);
+    width: 0%;
+    z-index: 1001;
+    transition: width 0.3s ease-out;
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  /* ── Fullscreen styles ── */
+  body.fullscreen .presentation-controls {
+    bottom: 30px;
+  }
+
+  body.fullscreen .slide {
+    padding: 80px 100px;
+  }
+
+  /* ── Presenter Mode Overlay ── */
+  .presenter-notes {
+    position: fixed;
+    bottom: 80px;
+    left: 20px;
+    right: 20px;
+    max-width: 400px;
+    background: rgba(18, 18, 26, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    z-index: 999;
+    backdrop-filter: blur(10px);
+    display: none;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  .presenter-notes.visible {
+    display: block;
+  }
+
+  .presenter-notes h4 {
+    color: var(--accent-light);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  /* ── Timer ── */
+  .timer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    background: var(--bg-code);
+    border-radius: 6px;
+  }
+
+  /* ── Help Overlay ── */
+  .help-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 15, 0.95);
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+  }
+
+  .help-overlay.visible {
+    display: flex;
+  }
+
+  .help-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 40px;
+    max-width: 500px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  .help-content h3 {
+    color: var(--text);
+    margin-bottom: 20px;
+    font-size: 1.3rem;
+  }
+
+  .help-content .shortcut {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .help-content .shortcut:last-child {
+    border-bottom: none;
+  }
+
+  .help-content .key {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-light);
+  }
+
+  .help-content .action {
+    color: var(--text-dim);
+  }
+
+  .close-help {
+    margin-top: 24px;
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .close-help:hover {
+    background: var(--accent-light);
+  }
+
   /* ── Separator ── */
   .sep {
     width: 60px;
@@ -948,6 +1150,62 @@
 </style>
 </head>
 <body>
+
+<!-- Progress Bar -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- Help Overlay -->
+<div class="help-overlay" id="helpOverlay">
+  <div class="help-content">
+    <h3>⌨️ Keyboard Shortcuts</h3>
+    <div class="shortcut">
+      <span class="key">→</span> <span class="key">↓</span> <span class="key">Space</span>
+      <span class="action">Next slide</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">←</span> <span class="key">↑</span>
+      <span class="action">Previous slide</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">Home</span>
+      <span class="action">First slide</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">End</span>
+      <span class="action">Last slide</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">F</span>
+      <span class="action">Toggle fullscreen</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">H</span>
+      <span class="action">Hide/show controls</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">?</span>
+      <span class="action">Show this help</span>
+    </div>
+    <div class="shortcut">
+      <span class="key">Esc</span>
+      <span class="action">Exit fullscreen / Close help</span>
+    </div>
+    <button class="close-help" onclick="toggleHelp()">Got it!</button>
+  </div>
+</div>
+
+<!-- Presentation Controls -->
+<div class="presentation-controls" id="controls">
+  <button class="ctrl-btn" onclick="goToSlide(0)" title="First slide">⏮</button>
+  <button class="ctrl-btn" onclick="prevSlide()" title="Previous (←)">◀</button>
+  <span class="slide-indicator" id="slideIndicator">1 / 13</span>
+  <button class="ctrl-btn" onclick="nextSlide()" title="Next (→)">▶</button>
+  <button class="ctrl-btn" onclick="goToSlide(12)" title="Last slide">⏭</button>
+  <div style="width:1px;height:24px;background:var(--border);margin:0 4px;"></div>
+  <span class="timer" id="timer">00:00</span>
+  <button class="ctrl-btn" onclick="toggleFullscreen()" title="Fullscreen (F)" id="fullscreenBtn">⛶</button>
+  <button class="ctrl-btn" onclick="toggleHelp()" title="Help (?)">?</button>
+</div>
 
 <!-- Navigation Dots -->
 <nav class="nav" id="nav">
@@ -1713,17 +1971,94 @@
 <!-- Navigation Script -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <script>
-  // Highlight active nav dot based on scroll position
+  // ═══════════════════════════════════════════════════════════════════
+  // Presentation Engine
+  // ═══════════════════════════════════════════════════════════════════
+  
   const slides = document.querySelectorAll('.slide');
   const navLinks = document.querySelectorAll('.nav a');
+  const progressBar = document.getElementById('progressBar');
+  const slideIndicator = document.getElementById('slideIndicator');
+  const controls = document.getElementById('controls');
+  const helpOverlay = document.getElementById('helpOverlay');
+  const timerEl = document.getElementById('timer');
+  const totalSlides = slides.length;
+  
+  let currentSlide = 0;
+  let controlsVisible = true;
+  let startTime = Date.now();
+  
+  // Timer
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const secs = (elapsed % 60).toString().padStart(2, '0');
+    timerEl.textContent = `${mins}:${secs}`;
+  }, 1000);
 
+  // Update UI based on current slide
+  function updateUI() {
+    // Progress bar
+    const progress = ((currentSlide + 1) / totalSlides) * 100;
+    progressBar.style.width = `${progress}%`;
+    
+    // Slide indicator
+    slideIndicator.textContent = `${currentSlide + 1} / ${totalSlides}`;
+    
+    // Nav dots
+    navLinks.forEach((link, i) => {
+      link.classList.toggle('active', i === currentSlide);
+    });
+  }
+
+  // Navigate to specific slide
+  function goToSlide(index) {
+    if (index < 0) index = 0;
+    if (index >= totalSlides) index = totalSlides - 1;
+    currentSlide = index;
+    slides[currentSlide].scrollIntoView({ behavior: 'smooth' });
+    updateUI();
+  }
+
+  function nextSlide() {
+    goToSlide(currentSlide + 1);
+  }
+
+  function prevSlide() {
+    goToSlide(currentSlide - 1);
+  }
+
+  // Fullscreen
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      document.body.classList.add('fullscreen');
+    } else {
+      document.exitFullscreen();
+      document.body.classList.remove('fullscreen');
+    }
+  }
+
+  // Toggle controls visibility
+  function toggleControls() {
+    controlsVisible = !controlsVisible;
+    controls.classList.toggle('hidden', !controlsVisible);
+  }
+
+  // Help overlay
+  function toggleHelp() {
+    helpOverlay.classList.toggle('visible');
+  }
+
+  // Intersection Observer for scroll-based navigation
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        const id = entry.target.id;
-        navLinks.forEach(link => {
-          link.classList.toggle('active', link.getAttribute('href') === '#' + id);
-        });
+        const index = [...slides].indexOf(entry.target);
+        if (index !== -1) {
+          currentSlide = index;
+          updateUI();
+        }
       }
     });
   }, { threshold: 0.5 });
@@ -1732,21 +2067,80 @@
 
   // Keyboard navigation
   document.addEventListener('keydown', (e) => {
-    const currentSlide = [...slides].findIndex(s => {
-      const rect = s.getBoundingClientRect();
-      return rect.top >= -100 && rect.top <= window.innerHeight / 2;
-    });
+    // Close help on Escape
+    if (e.key === 'Escape') {
+      if (helpOverlay.classList.contains('visible')) {
+        toggleHelp();
+        return;
+      }
+    }
+    
+    // Don't handle keys if help is open
+    if (helpOverlay.classList.contains('visible')) return;
 
-    if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
-      e.preventDefault();
-      const next = Math.min(currentSlide + 1, slides.length - 1);
-      slides[next].scrollIntoView({ behavior: 'smooth' });
-    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
-      e.preventDefault();
-      const prev = Math.max(currentSlide - 1, 0);
-      slides[prev].scrollIntoView({ behavior: 'smooth' });
+    switch(e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+      case ' ':
+      case 'PageDown':
+        e.preventDefault();
+        nextSlide();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+      case 'PageUp':
+        e.preventDefault();
+        prevSlide();
+        break;
+      case 'Home':
+        e.preventDefault();
+        goToSlide(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        goToSlide(totalSlides - 1);
+        break;
+      case 'f':
+      case 'F':
+        e.preventDefault();
+        toggleFullscreen();
+        break;
+      case 'h':
+      case 'H':
+        e.preventDefault();
+        toggleControls();
+        break;
+      case '?':
+        e.preventDefault();
+        toggleHelp();
+        break;
     }
   });
+
+  // Click on nav dots
+  navLinks.forEach((link, i) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      goToSlide(i);
+    });
+  });
+
+  // Handle fullscreen change
+  document.addEventListener('fullscreenchange', () => {
+    const btn = document.getElementById('fullscreenBtn');
+    if (document.fullscreenElement) {
+      btn.textContent = '⛶';
+      btn.classList.add('active');
+      document.body.classList.add('fullscreen');
+    } else {
+      btn.textContent = '⛶';
+      btn.classList.remove('active');
+      document.body.classList.remove('fullscreen');
+    }
+  });
+
+  // Initialize
+  updateUI();
 </script>
 
 </body>
