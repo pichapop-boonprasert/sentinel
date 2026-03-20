@@ -5,13 +5,15 @@
  * in both .NET and JavaScript/TypeScript code. It supports various masking
  * functions (Mask, Redact, Anonymize, Hash) and mask literals.
  * 
- * Requirements: 5.1, 5.2, 5.3, 5.4
+ * Requirements: 4.2, 5.1
  */
 
 import * as vscode from 'vscode';
 import { SensitivePattern } from '../patterns/types';
 import { PatternMatcher } from '../patterns/patternMatcher';
+import { PatternRegistry } from '../patterns/patternRegistry';
 import { DiagnosticGenerator } from '../diagnostics/diagnosticGenerator';
+import { LoggingMethodRegistry } from '../config/loggingMethodRegistry';
 
 /**
  * Represents a span of text containing logging function arguments.
@@ -22,30 +24,6 @@ export interface LoggingSpan {
   /** End position of logging function arguments (before closing paren) */
   argEnd: number;
 }
-
-/**
- * .NET logging functions to detect.
- */
-export const DOTNET_LOG_FUNCTIONS = [
-  'Console.WriteLine', 'Console.Write',
-  'Debug.WriteLine', 'Debug.Write', 'Debug.Log',
-  'Trace.WriteLine', 'Trace.Write',
-  'LogInformation', 'LogWarning', 'LogError', 'LogDebug', 'LogTrace', 'LogCritical',
-  'Log.Information', 'Log.Warning', 'Log.Error', 'Log.Debug', 'Log.Verbose', 'Log.Fatal',
-];
-
-/**
- * JavaScript/TypeScript logging functions to detect.
- */
-export const JS_LOG_FUNCTIONS = [
-  'console.log', 'console.warn', 'console.error',
-  'console.info', 'console.debug', 'console.trace',
-];
-
-/**
- * Short method names that require a dot prefix (e.g., logger.Info()).
- */
-const SHORT_LOG_METHODS = ['Info', 'Warn', 'Error', 'Debug', 'Fatal', 'Trace'];
 
 /**
  * Masking method patterns to detect.
@@ -73,25 +51,41 @@ const MASK_STRING_LITERALS = [
 
 /**
  * LoggingAnalyzer detects sensitive fields in logging contexts and checks for masking.
+ * 
+ * This analyzer integrates with:
+ * - PatternRegistry: For getting effective patterns (respects category toggles, exclusions)
+ * - LoggingMethodRegistry: For getting effective logging methods (respects user configuration)
+ * 
+ * Requirements: 4.2, 5.1
  */
 export class LoggingAnalyzer {
   private patternMatcher: PatternMatcher;
   private diagnosticGenerator: DiagnosticGenerator;
+  private patternRegistry: PatternRegistry;
+  private loggingMethodRegistry: LoggingMethodRegistry;
 
-  constructor() {
+  constructor(
+    patternRegistry?: PatternRegistry,
+    loggingMethodRegistry?: LoggingMethodRegistry
+  ) {
     this.patternMatcher = new PatternMatcher();
     this.diagnosticGenerator = new DiagnosticGenerator();
+    this.patternRegistry = patternRegistry || new PatternRegistry();
+    this.loggingMethodRegistry = loggingMethodRegistry || new LoggingMethodRegistry();
   }
 
   /**
    * Find all logging function call spans in document text.
    * 
+   * Uses LoggingMethodRegistry to get effective logging methods based on configuration.
+   * This respects user-configured logging methods (replace mode per Requirement 8.1).
+   * 
    * @param text - The document text to analyze
    * @param languageId - The VS Code language ID (e.g., 'csharp', 'typescript')
-   * @param extraFunctions - Additional logging functions to detect
+   * @param extraFunctions - Additional logging functions to detect (deprecated, use configuration instead)
    * @returns Array of LoggingSpan objects representing logging function arguments
    * 
-   * Requirements: 5.4
+   * Requirements: 4.2, 5.1
    */
   findLoggingSpans(
     text: string,
@@ -99,15 +93,20 @@ export class LoggingAnalyzer {
     extraFunctions: string[] = []
   ): LoggingSpan[] {
     const spans: LoggingSpan[] = [];
-    const isJs = ['javascript', 'typescript', 'javascriptreact', 'typescriptreact'].includes(languageId);
-
-    const funcs = [
-      ...(isJs ? JS_LOG_FUNCTIONS : DOTNET_LOG_FUNCTIONS),
-      ...extraFunctions,
-    ];
+    
+    // Get effective logging methods from registry (respects user configuration)
+    const effectiveMethods = this.loggingMethodRegistry.getEffectiveMethods(languageId);
+    
+    // If no methods configured (empty array), logging detection is disabled
+    if (effectiveMethods.length === 0) {
+      return spans;
+    }
+    
+    // Combine with any extra functions passed directly (for backward compatibility)
+    const allMethods = [...effectiveMethods, ...extraFunctions];
 
     // Find standard logging function calls
-    for (const func of funcs) {
+    for (const func of allMethods) {
       const escaped = func.replace(/\./g, '\\.');
       const pattern = new RegExp(`\\b${escaped}\\s*\\(`, 'g');
       let m: RegExpExecArray | null;
@@ -122,9 +121,13 @@ export class LoggingAnalyzer {
       }
     }
 
+    // Get short method names from registry and find calls with dot prefix
+    const shortMethods = this.loggingMethodRegistry.getShortMethods();
+    const isJs = ['javascript', 'typescript', 'javascriptreact', 'typescriptreact'].includes(languageId);
+    
     // Short method names (Info, Warn, etc.) require dot prefix for .NET
     if (!isJs) {
-      for (const method of SHORT_LOG_METHODS) {
+      for (const method of shortMethods) {
         const pattern = new RegExp(`\\.${method}\\s*\\(`, 'g');
         let m: RegExpExecArray | null;
         while ((m = pattern.exec(text)) !== null) {
@@ -174,11 +177,13 @@ export class LoggingAnalyzer {
    * 
    * A field is considered masked if:
    * 1. It's wrapped in a masking function (Mask, Redact, Anonymize, Hash)
-   * 2. Mask literals appear in the same logging arguments ([REDACTED], [MASKED], ***)
+   * 2. The field is followed by a masking method call (e.g., field.Mask())
+   * 3. Mask literals appear in the same logging arguments ([REDACTED], [MASKED], ***)
    * 
    * @param argText - The text of the logging function arguments
    * @param position - The position of the field within argText
    * @param extraMaskPatterns - Additional masking patterns to check
+   * @param identifierLength - The length of the identifier (optional, for checking suffix patterns)
    * @returns true if the field is properly masked, false otherwise
    * 
    * Requirements: 5.2, 5.3
@@ -186,11 +191,12 @@ export class LoggingAnalyzer {
   isMasked(
     argText: string,
     position: number,
-    extraMaskPatterns: string[] = []
+    extraMaskPatterns: string[] = [],
+    identifierLength: number = 0
   ): boolean {
     const allMaskMethods = [...MASK_METHOD_PATTERNS, ...extraMaskPatterns];
 
-    // Check if PII is inside a mask method call
+    // Check if PII is inside a mask method call (mask function wraps the field)
     for (const mp of allMaskMethods) {
       const base = mp.endsWith('(') ? mp.slice(0, -1) : mp;
       const idx = argText.lastIndexOf(base, position);
@@ -198,6 +204,33 @@ export class LoggingAnalyzer {
         const afterBase = argText.indexOf('(', idx + base.length);
         if (afterBase !== -1 && afterBase <= position) {
           return true;
+        }
+      }
+    }
+
+    // Check if PII is followed by a masking method call (e.g., field.Mask(), field.abc())
+    // Look for patterns like ".methodName(" after the identifier
+    const afterIdentifier = position + identifierLength;
+    for (const mp of allMaskMethods) {
+      if (mp.startsWith('.')) {
+        // For patterns like ".Mask(", ".abc(" - check if it appears right after the field
+        // Look in the text starting from after the identifier
+        const textAfter = argText.substring(afterIdentifier);
+        
+        // Check if the masking pattern appears at or near the start (allowing for whitespace)
+        const trimmedAfter = textAfter.trimStart();
+        if (trimmedAfter.startsWith(mp) || trimmedAfter.startsWith(mp.substring(1))) {
+          return true;
+        }
+        
+        // Also check for chained calls like .Something.abc()
+        const idx = textAfter.indexOf(mp);
+        if (idx !== -1 && idx < 30) {
+          // Make sure there's no comma before the mask (same expression)
+          const beforeMask = textAfter.substring(0, idx);
+          if (!beforeMask.includes(',') && !beforeMask.includes(';')) {
+            return true;
+          }
         }
       }
     }
@@ -215,17 +248,20 @@ export class LoggingAnalyzer {
   /**
    * Analyze document for unmasked sensitive field logging.
    * 
+   * Uses PatternRegistry to get effective patterns (respects category toggles, exclusions).
+   * Uses LoggingMethodRegistry to get effective logging methods (respects user configuration).
+   * 
    * @param document - The VS Code text document to analyze
-   * @param patterns - Array of sensitive patterns to check for
-   * @param extraLoggingFunctions - Additional logging functions to detect
+   * @param patterns - Array of sensitive patterns to check for (optional, uses PatternRegistry if not provided)
+   * @param extraLoggingFunctions - Additional logging functions to detect (deprecated, use configuration instead)
    * @param extraMaskingPatterns - Additional masking patterns to check
    * @returns Array of VS Code diagnostics for unmasked logging
    * 
-   * Requirements: 5.1, 5.2, 5.3, 5.4
+   * Requirements: 4.2, 5.1
    */
   analyze(
     document: vscode.TextDocument,
-    patterns: SensitivePattern[],
+    patterns?: SensitivePattern[],
     extraLoggingFunctions: string[] = [],
     extraMaskingPatterns: string[] = []
   ): vscode.Diagnostic[] {
@@ -233,8 +269,18 @@ export class LoggingAnalyzer {
     const text = document.getText();
     const languageId = document.languageId;
 
+    // Check if logging detection is enabled for this language
+    if (!this.loggingMethodRegistry.isDetectionEnabled(languageId)) {
+      return diagnostics;
+    }
+
     const spans = this.findLoggingSpans(text, languageId, extraLoggingFunctions);
     if (spans.length === 0) { return diagnostics; }
+
+    // Use provided patterns or get effective patterns from registry
+    // PatternRegistry respects category toggles and exclusions (Requirements 5.1, 5.3, 8.3)
+    const effectivePatterns = patterns || this.patternRegistry.getAllEffectivePatterns();
+    if (effectivePatterns.length === 0) { return diagnostics; }
 
     // Scan each logging span for sensitive identifiers
     const identifierRegex = /\b(\w+)\b/g;
@@ -247,12 +293,13 @@ export class LoggingAnalyzer {
       while ((m = identifierRegex.exec(argText)) !== null) {
         const identifier = m[1];
         
-        // Use PatternMatcher to find matching sensitive pattern
-        const matchedPattern = this.patternMatcher.matches(identifier, patterns);
+        // Use PatternRegistry.matchPattern() for pattern matching
+        // This respects category toggles and exclusions
+        const matchedPattern = this.patternRegistry.matchPattern(identifier);
         if (!matchedPattern) { continue; }
 
         const relStart = m.index;
-        if (this.isMasked(argText, relStart, extraMaskingPatterns)) {
+        if (this.isMasked(argText, relStart, extraMaskingPatterns, identifier.length)) {
           continue;
         }
 
@@ -272,5 +319,16 @@ export class LoggingAnalyzer {
     }
 
     return diagnostics;
+  }
+
+  /**
+   * Refresh the analyzer's registries from configuration.
+   * Should be called when configuration changes.
+   * 
+   * Requirements: 3.6, 4.6
+   */
+  refresh(): void {
+    this.patternRegistry.refresh();
+    this.loggingMethodRegistry.refresh();
   }
 }

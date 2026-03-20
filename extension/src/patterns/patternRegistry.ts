@@ -3,10 +3,17 @@
  * 
  * This module provides a centralized registry for sensitive field patterns,
  * supporting default patterns, custom patterns, exclusions, and category toggles.
+ * 
+ * Key behaviors:
+ * - Custom patterns are ADDITIVE (merged with defaults)
+ * - Excluded patterns are removed from effective patterns
+ * - Patterns are deduplicated after merging
  */
 
+import * as vscode from 'vscode';
 import { PatternCategory, SensitivePattern, CATEGORY_COMPLIANCE } from './types';
 import { DEFAULT_PATTERNS } from './defaultPatterns';
+import { ConfigurationValidator } from '../config/configurationValidator';
 
 /**
  * Configuration options for the PatternRegistry.
@@ -36,16 +43,49 @@ function normalizeIdentifier(identifier: string): string {
 /**
  * PatternRegistry manages the collection of sensitive field patterns.
  * It supports merging default patterns with custom patterns and filtering by exclusions.
+ * 
+ * Implements the PatternRegistry interface from the design document:
+ * - getPatternsForCategory(category): Get merged patterns for a category
+ * - getAllEffectivePatterns(): Get all patterns across enabled categories
+ * - isExcluded(pattern): Check if a pattern is excluded
+ * - refresh(): Reload patterns from configuration
  */
 export class PatternRegistry {
+  private readonly configSection = 'piiJsonChecker';
+  private readonly validator: ConfigurationValidator;
+  
   private patterns: SensitivePattern[] = [];
   private patternsByCategory: Map<PatternCategory, SensitivePattern[]> = new Map();
   private enabledCategories: Map<PatternCategory, boolean> = new Map();
+  private excludedPatternsSet: Set<string> = new Set();
   private normalizedPatternMap: Map<string, SensitivePattern> = new Map();
 
-  constructor(config: PatternRegistryConfig = {}) {
+  constructor(config?: PatternRegistryConfig) {
+    this.validator = new ConfigurationValidator();
+    
+    if (config) {
+      // Use provided config (for testing or manual configuration)
+      this.initializeFromConfig(config);
+    } else {
+      // Load from VS Code settings
+      this.refresh();
+    }
+  }
+
+  /**
+   * Initialize the registry from a provided configuration object.
+   */
+  private initializeFromConfig(config: PatternRegistryConfig): void {
     this.initializeEnabledCategories(config.enabledCategories);
+    this.initializeExcludedPatterns(config.excludedPatterns);
     this.buildPatterns(config.customPatterns, config.excludedPatterns);
+  }
+
+  /**
+   * Get the VS Code workspace configuration for the extension.
+   */
+  private getConfig(): vscode.WorkspaceConfiguration {
+    return vscode.workspace.getConfiguration(this.configSection);
   }
 
   /**
@@ -70,6 +110,15 @@ export class PatternRegistry {
   }
 
   /**
+   * Initialize the excluded patterns set.
+   */
+  private initializeExcludedPatterns(excludedPatterns?: string[]): void {
+    this.excludedPatternsSet = new Set(
+      (excludedPatterns || []).map(p => normalizeIdentifier(p))
+    );
+  }
+
+  /**
    * Build the pattern collection by merging defaults with custom patterns
    * and filtering out excluded patterns.
    */
@@ -77,10 +126,12 @@ export class PatternRegistry {
     customPatterns?: Partial<Record<PatternCategory, string[]>>,
     excludedPatterns?: string[]
   ): void {
-    const excludedSet = new Set(
-      (excludedPatterns || []).map(p => normalizeIdentifier(p))
-    );
+    // Initialize excluded set
+    this.initializeExcludedPatterns(excludedPatterns);
 
+    // Clear existing data
+    this.normalizedPatternMap.clear();
+    
     // Initialize category maps
     for (const category of Object.values(PatternCategory)) {
       this.patternsByCategory.set(category, []);
@@ -91,18 +142,37 @@ export class PatternRegistry {
       const defaultPatternsForCategory = DEFAULT_PATTERNS[category] || [];
       const customPatternsForCategory = customPatterns?.[category] || [];
 
-      // Merge default and custom patterns, removing duplicates
-      const allPatterns = new Set([
-        ...defaultPatternsForCategory,
-        ...customPatternsForCategory
-      ]);
+      // Normalize and validate custom patterns
+      const validCustomPatterns = this.validator.normalizePatterns(customPatternsForCategory);
+
+      // Merge default and custom patterns using a Map to deduplicate by normalized form
+      const seenNormalized = new Set<string>();
+      const mergedPatterns: string[] = [];
+
+      // Add defaults first
+      for (const pattern of defaultPatternsForCategory) {
+        const normalized = normalizeIdentifier(pattern);
+        if (!seenNormalized.has(normalized)) {
+          seenNormalized.add(normalized);
+          mergedPatterns.push(pattern);
+        }
+      }
+
+      // Add custom patterns (deduplicated)
+      for (const pattern of validCustomPatterns) {
+        const normalized = normalizeIdentifier(pattern);
+        if (!seenNormalized.has(normalized)) {
+          seenNormalized.add(normalized);
+          mergedPatterns.push(pattern);
+        }
+      }
 
       // Create SensitivePattern objects, filtering out excluded patterns
-      for (const pattern of allPatterns) {
+      for (const pattern of mergedPatterns) {
         const normalizedPattern = normalizeIdentifier(pattern);
         
         // Skip if pattern is excluded
-        if (excludedSet.has(normalizedPattern)) {
+        if (this.excludedPatternsSet.has(normalizedPattern)) {
           continue;
         }
 
@@ -138,17 +208,13 @@ export class PatternRegistry {
   }
 
   /**
-   * Get all enabled patterns across categories.
-   */
-  getPatterns(): SensitivePattern[] {
-    return [...this.patterns];
-  }
-
-  /**
-   * Get patterns for a specific category.
+   * Get merged patterns for a category (defaults + custom - excluded).
    * Returns empty array if category is disabled.
+   * 
+   * @param category - The pattern category to get patterns for
+   * @returns Array of SensitivePattern objects for the category
    */
-  getPatternsByCategory(category: PatternCategory): SensitivePattern[] {
+  getPatternsForCategory(category: PatternCategory): SensitivePattern[] {
     if (!this.isCategoryEnabled(category)) {
       return [];
     }
@@ -156,10 +222,79 @@ export class PatternRegistry {
   }
 
   /**
+   * Get all effective patterns across enabled categories.
+   * This returns the merged patterns (defaults + custom - excluded) for all enabled categories.
+   * 
+   * @returns Array of all effective SensitivePattern objects
+   */
+  getAllEffectivePatterns(): SensitivePattern[] {
+    return [...this.patterns];
+  }
+
+  /**
+   * Check if a pattern is excluded.
+   * Comparison is done using normalized form (case-insensitive, naming convention agnostic).
+   * 
+   * @param pattern - The pattern string to check
+   * @returns true if the pattern is in the exclusion list
+   */
+  isExcluded(pattern: string): boolean {
+    const normalized = normalizeIdentifier(pattern);
+    return this.excludedPatternsSet.has(normalized);
+  }
+
+  /**
+   * Reload patterns from VS Code configuration.
+   * This method reads the current settings and rebuilds the pattern collections.
+   * Should be called when configuration changes.
+   */
+  refresh(): void {
+    const config = this.getConfig();
+
+    // Read enabled categories
+    const enabledCategories: Partial<Record<PatternCategory, boolean>> = {};
+    for (const category of Object.values(PatternCategory)) {
+      enabledCategories[category] = config.get<boolean>(`categories.${category}`, true);
+    }
+    this.initializeEnabledCategories(enabledCategories);
+
+    // Read custom patterns for each category
+    const customPatterns: Partial<Record<PatternCategory, string[]>> = {};
+    for (const category of Object.values(PatternCategory)) {
+      const patterns = config.get<string[]>(`customPatterns.${category}`, []);
+      if (patterns.length > 0) {
+        customPatterns[category] = patterns;
+      }
+    }
+
+    // Read excluded patterns
+    const excludedPatterns = config.get<string[]>('excludedPatterns', []);
+
+    // Rebuild patterns with new configuration
+    this.buildPatterns(customPatterns, excludedPatterns);
+  }
+
+  /**
    * Check if a category is enabled.
    */
   isCategoryEnabled(category: PatternCategory): boolean {
     return this.enabledCategories.get(category) ?? true;
+  }
+
+  /**
+   * Get all enabled patterns across categories.
+   * @deprecated Use getAllEffectivePatterns() instead
+   */
+  getPatterns(): SensitivePattern[] {
+    return this.getAllEffectivePatterns();
+  }
+
+  /**
+   * Get patterns for a specific category.
+   * @deprecated Use getPatternsForCategory() instead
+   */
+  getPatternsByCategory(category: PatternCategory): SensitivePattern[] {
+    return this.getPatternsForCategory(category);
   }
 
   /**

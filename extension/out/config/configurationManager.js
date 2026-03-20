@@ -10,6 +10,8 @@ exports.ConfigurationManager = void 0;
 const vscode = require("vscode");
 const types_1 = require("../patterns/types");
 const defaultPatterns_1 = require("../patterns/defaultPatterns");
+const loggingMethodRegistry_1 = require("./loggingMethodRegistry");
+const configurationValidator_1 = require("./configurationValidator");
 /**
  * Normalizes an identifier for pattern matching.
  * Converts camelCase, snake_case, kebab-case, and space-separated to lowercase.
@@ -30,12 +32,29 @@ function normalizeIdentifier(identifier) {
 class ConfigurationManager {
     constructor() {
         this.configSection = 'piiJsonChecker';
+        this.loggingMethodRegistry = new loggingMethodRegistry_1.LoggingMethodRegistry();
+        this.configurationValidator = new configurationValidator_1.ConfigurationValidator();
     }
     /**
      * Get the VS Code workspace configuration for the extension.
      */
     getConfig() {
         return vscode.workspace.getConfiguration(this.configSection);
+    }
+    /**
+     * Get the final list of logging methods to detect based on user config or defaults.
+     *
+     * This method integrates with LoggingMethodRegistry to support:
+     * - Replace mode: User-configured methods replace defaults (not additive)
+     * - Default fallback: Returns language-appropriate defaults when no user config exists
+     *
+     * @param languageId - The VS Code language ID (e.g., 'csharp', 'typescript')
+     * @returns Array of logging method names to detect
+     *
+     * Requirements: 4.1, 4.3, 8.1
+     */
+    getEffectiveLoggingMethods(languageId) {
+        return this.loggingMethodRegistry.getEffectiveMethods(languageId);
     }
     /**
      * Get merged patterns (defaults + user additions - exclusions).
@@ -135,6 +154,68 @@ class ConfigurationManager {
     isLoggingDetectionEnabled() {
         const config = this.getConfig();
         return config.get('enableLoggingDetection', true);
+    }
+    /**
+     * Get patterns to exclude from detection.
+     * Returns the array of patterns that should be excluded from sensitive field detection.
+     * Returns an empty array if no exclusions are configured.
+     *
+     * Requirements: 5.3, 8.3
+     */
+    getExcludedPatterns() {
+        const config = this.getConfig();
+        return config.get('excludedPatterns', []);
+    }
+    /**
+     * Validates the current configuration and returns a ValidationResult.
+     *
+     * This method validates all configuration settings including:
+     * - Custom pattern arrays for each category (pii, financial, health, credentials)
+     * - Excluded patterns array
+     * - Logging functions array
+     * - Severity setting
+     *
+     * Invalid values are reported as warnings, and the extension will fall back
+     * to default values for any invalid configuration.
+     *
+     * Requirements: 7.2, 7.3, 7.4, 7.5, 7.6
+     *
+     * @returns ValidationResult with isValid flag and warnings array
+     */
+    validateConfiguration() {
+        const config = this.getConfig();
+        const allWarnings = [];
+        // Validate custom patterns for each category
+        const categories = ['pii', 'financial', 'health', 'credentials'];
+        for (const category of categories) {
+            const patterns = config.get(`customPatterns.${category}`);
+            if (patterns !== undefined) {
+                const result = this.configurationValidator.validatePatternArray(patterns, `customPatterns.${category}`);
+                allWarnings.push(...result.warnings);
+            }
+        }
+        // Validate excluded patterns
+        const excludedPatterns = config.get('excludedPatterns');
+        if (excludedPatterns !== undefined) {
+            const result = this.configurationValidator.validatePatternArray(excludedPatterns, 'excludedPatterns');
+            allWarnings.push(...result.warnings);
+        }
+        // Validate logging functions
+        const loggingFunctions = config.get('loggingFunctions');
+        if (loggingFunctions !== undefined) {
+            const result = this.configurationValidator.validateLoggingMethods(loggingFunctions);
+            allWarnings.push(...result.warnings);
+        }
+        // Validate severity
+        const severity = config.get('severity');
+        if (severity !== undefined) {
+            const result = this.configurationValidator.validateSeverity(severity);
+            allWarnings.push(...result.warnings);
+        }
+        return {
+            isValid: allWarnings.length === 0,
+            warnings: allWarnings
+        };
     }
 }
 exports.ConfigurationManager = ConfigurationManager;

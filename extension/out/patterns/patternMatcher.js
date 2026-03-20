@@ -11,7 +11,7 @@ exports.PatternMatcher = void 0;
 exports.normalize = normalize;
 /**
  * Normalizes an identifier for pattern matching.
- * Converts camelCase, snake_case, kebab-case, and space-separated formats
+ * Converts camelCase, snake_case, kebab-case, PascalCase, and space-separated formats
  * to a consistent lowercase space-separated format.
  *
  * Examples:
@@ -21,6 +21,12 @@ exports.normalize = normalize;
  * - "first name" -> "first name"
  * - "FirstName" -> "first name"
  * - "FIRST_NAME" -> "first name"
+ * - "SSN" -> "ssn"
+ * - "userSSN" -> "user ssn"
+ * - "XMLParser" -> "xml parser"
+ * - "address2" -> "address 2"
+ * - "user2FA" -> "user 2 fa"
+ * - "123abc" -> "123 abc"
  *
  * @param identifier - The identifier string to normalize
  * @returns The normalized identifier in lowercase space-separated format
@@ -36,6 +42,12 @@ function normalize(identifier) {
         // Handle sequences of uppercase letters followed by lowercase
         // (e.g., "XMLParser" -> "XML Parser")
         .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        // Handle numbers followed by uppercase letters (e.g., "user2FA" -> "user2 FA")
+        .replace(/([0-9])([A-Z])/g, '$1 $2')
+        // Handle lowercase letters followed by numbers (e.g., "address2" -> "address 2")
+        .replace(/([a-z])([0-9])/g, '$1 $2')
+        // Handle numbers followed by lowercase letters (e.g., "123abc" -> "123 abc")
+        .replace(/([0-9])([a-z])/g, '$1 $2')
         // Replace underscores and hyphens with spaces
         .replace(/[_-]/g, ' ')
         // Convert to lowercase

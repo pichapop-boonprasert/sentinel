@@ -20,32 +20,44 @@
           "type": "string",
           "default": "Warning",
           "enum": ["Error", "Warning", "Information", "Hint"],
-          "description": "Severity level for sensitive field diagnostics"
+          "enumDescriptions": [
+            "Show as errors (red underline) - use for strict compliance enforcement",
+            "Show as warnings (yellow underline) - recommended default for most projects",
+            "Show as information (blue underline) - use for advisory-only mode",
+            "Show as hints (subtle dots) - use for minimal visual impact"
+          ],
+          "description": "Diagnostic Severity Level: Controls how sensitive field detections are displayed. Choose based on your compliance requirements.",
+          "markdownDescription": "**Diagnostic Severity Level**\n\nControls how sensitive field detections are displayed in the editor.\n\n- **Error**: Red underline, appears in Problems panel as error\n- **Warning**: Yellow underline, recommended for most projects\n- **Information**: Blue underline, advisory only\n- **Hint**: Subtle dots, minimal visual impact"
         },
         "piiJsonChecker.enableLoggingDetection": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable sensitive field detection in logging statements"
+          "description": "Enable Logging Statement Analysis: When enabled, detects sensitive fields passed to logging functions (console.log, Logger.Info, etc.).",
+          "markdownDescription": "**Enable Logging Statement Analysis**\n\nWhen enabled, the extension analyzes logging statements (like `console.log`, `Logger.LogInformation`) and warns when sensitive fields are logged without masking.\n\nDisable this if you only want JSON/model field detection."
         },
         "piiJsonChecker.categories.pii": {
           "type": "boolean",
           "default": true,
-          "description": "Enable detection of Personal Identifiable Information (PII) fields such as names, emails, addresses, SSN, etc. (GDPR, CCPA compliance)"
+          "description": "Enable PII Detection: Detects Personal Identifiable Information fields (names, emails, addresses, SSN, phone numbers). Supports GDPR and CCPA compliance.",
+          "markdownDescription": "**Enable PII Detection**\n\nDetects Personal Identifiable Information fields including:\n- Names (firstName, lastName, fullName)\n- Contact info (email, phone, address)\n- Government IDs (ssn, nationalId, passportNumber)\n- Biometric data (fingerprint, faceId)\n\n*Compliance: GDPR, CCPA*"
         },
         "piiJsonChecker.categories.financial": {
           "type": "boolean",
           "default": true,
-          "description": "Enable detection of financial data fields such as credit card numbers, bank accounts, CVV, etc. (PCI-DSS compliance)"
+          "description": "Enable Financial Data Detection: Detects financial fields (credit cards, bank accounts, CVV, routing numbers). Supports PCI-DSS compliance.",
+          "markdownDescription": "**Enable Financial Data Detection**\n\nDetects financial data fields including:\n- Payment cards (creditCard, cardNumber, cvv, expiryDate)\n- Bank accounts (bankAccount, routingNumber, iban)\n- Financial identifiers (taxId, accountBalance)\n\n*Compliance: PCI-DSS*"
         },
         "piiJsonChecker.categories.health": {
           "type": "boolean",
           "default": true,
-          "description": "Enable detection of health information fields such as patient IDs, diagnoses, prescriptions, etc. (HIPAA compliance)"
+          "description": "Enable Health Information Detection: Detects health-related fields (patient IDs, diagnoses, prescriptions, medical records). Supports HIPAA compliance.",
+          "markdownDescription": "**Enable Health Information Detection**\n\nDetects Protected Health Information (PHI) fields including:\n- Patient identifiers (patientId, medicalRecordNumber)\n- Clinical data (diagnosis, prescription, labResults)\n- Insurance info (insuranceId, healthPlanId)\n\n*Compliance: HIPAA*"
         },
         "piiJsonChecker.categories.credentials": {
           "type": "boolean",
           "default": true,
-          "description": "Enable detection of authentication credential fields such as passwords, API keys, tokens, connection strings, etc. (SOC2, ISO27001 compliance)"
+          "description": "Enable Credentials Detection: Detects authentication fields (passwords, API keys, tokens, secrets, connection strings). Supports SOC2 and ISO27001 compliance.",
+          "markdownDescription": "**Enable Credentials Detection**\n\nDetects authentication and secret fields including:\n- Passwords (password, passwordHash, pin)\n- API credentials (apiKey, apiSecret, accessToken)\n- Secrets (secretKey, privateKey, connectionString)\n\n*Compliance: SOC2, ISO27001*"
         },
         "piiJsonChecker.customPatterns.pii": {
           "type": "array",
@@ -53,7 +65,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional PII patterns to detect (e.g., ['employeeId', 'staffNumber'])"
+          "description": "Additional PII Patterns (Additive): Add custom field names to detect as PII. These are ADDED to built-in patterns. Example: [\"employeeId\", \"staffNumber\", \"membershipId\"]",
+          "markdownDescription": "**Additional PII Patterns** *(Additive Mode)*\n\nAdd custom field names to detect as Personal Identifiable Information. These patterns are **added to** the built-in PII patterns, not replacing them.\n\n**Examples:**\n```json\n[\"employeeId\", \"staffNumber\", \"membershipId\", \"visitorName\"]\n```\n\n**Supported formats:** camelCase, snake_case, kebab-case, PascalCase\n\n*Tip: Use this for organization-specific identifiers not covered by defaults.*"
         },
         "piiJsonChecker.customPatterns.financial": {
           "type": "array",
@@ -61,7 +74,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional financial patterns to detect (e.g., ['invoiceNumber', 'transactionId'])"
+          "description": "Additional Financial Patterns (Additive): Add custom field names to detect as financial data. These are ADDED to built-in patterns. Example: [\"invoiceNumber\", \"transactionId\", \"merchantId\"]",
+          "markdownDescription": "**Additional Financial Patterns** *(Additive Mode)*\n\nAdd custom field names to detect as financial data. These patterns are **added to** the built-in financial patterns, not replacing them.\n\n**Examples:**\n```json\n[\"invoiceNumber\", \"transactionId\", \"merchantId\", \"paymentRef\"]\n```\n\n**Supported formats:** camelCase, snake_case, kebab-case, PascalCase\n\n*Tip: Use this for custom payment or billing field names in your codebase.*"
         },
         "piiJsonChecker.customPatterns.health": {
           "type": "array",
@@ -69,7 +83,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional health information patterns to detect (e.g., ['allergyInfo', 'bloodType'])"
+          "description": "Additional Health Patterns (Additive): Add custom field names to detect as health information. These are ADDED to built-in patterns. Example: [\"allergyInfo\", \"bloodType\", \"vaccinationStatus\"]",
+          "markdownDescription": "**Additional Health Patterns** *(Additive Mode)*\n\nAdd custom field names to detect as health information. These patterns are **added to** the built-in health patterns, not replacing them.\n\n**Examples:**\n```json\n[\"allergyInfo\", \"bloodType\", \"vaccinationStatus\", \"emergencyContact\"]\n```\n\n**Supported formats:** camelCase, snake_case, kebab-case, PascalCase\n\n*Tip: Use this for healthcare-specific field names in your application.*"
         },
         "piiJsonChecker.customPatterns.credentials": {
           "type": "array",
@@ -77,7 +92,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional credential patterns to detect (e.g., ['serviceKey', 'authCode'])"
+          "description": "Additional Credential Patterns (Additive): Add custom field names to detect as credentials. These are ADDED to built-in patterns. Example: [\"serviceKey\", \"authCode\", \"encryptionKey\"]",
+          "markdownDescription": "**Additional Credential Patterns** *(Additive Mode)*\n\nAdd custom field names to detect as credentials or secrets. These patterns are **added to** the built-in credential patterns, not replacing them.\n\n**Examples:**\n```json\n[\"serviceKey\", \"authCode\", \"encryptionKey\", \"dbPassword\"]\n```\n\n**Supported formats:** camelCase, snake_case, kebab-case, PascalCase\n\n*Tip: Use this for application-specific secret or key field names.*"
         },
         "piiJsonChecker.excludedPatterns": {
           "type": "array",
@@ -85,7 +101,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Patterns to exclude from detection (e.g., ['displayName'] to allow display names without warnings)"
+          "description": "Excluded Patterns: Field names to EXCLUDE from detection. Use this to suppress false positives. Example: [\"displayName\", \"userName\", \"publicKey\"]",
+          "markdownDescription": "**Excluded Patterns** *(Removes from Detection)*\n\nField names to **exclude** from sensitive field detection. Use this to suppress false positives for fields that match default patterns but are safe in your context.\n\n**Examples:**\n```json\n[\"displayName\", \"userName\", \"publicKey\", \"firstName_display\"]\n```\n\n**Supported formats:** camelCase, snake_case, kebab-case, PascalCase\n\n*Tip: If a built-in pattern causes too many false positives, add it here instead of disabling the entire category.*"
         },
         "piiJsonChecker.loggingFunctions": {
           "type": "array",
@@ -93,7 +110,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional logging function names to detect (e.g., ['myLogger.log', 'customLog'])"
+          "description": "Custom Logging Functions (Replace Mode): When configured, REPLACES the default logging functions. Leave empty to use defaults. Example: [\"MyLogger.Log\", \"customLog\", \"audit\"]",
+          "markdownDescription": "**Custom Logging Functions** *(Replace Mode)*\n\nWhen configured with values, this **replaces** the default logging function detection entirely. Leave empty to use the built-in defaults.\n\n**Examples:**\n```json\n[\"MyLogger.Log\", \"customLog\", \"audit\", \"trace\"]\n```\n\n**Supported formats:**\n- Fully qualified: `Console.WriteLine`, `Logger.LogInformation`\n- Short names: `log`, `info`, `warn`, `error`\n\n**Default functions (when empty):**\n- .NET: `Log`, `LogInformation`, `LogWarning`, `LogError`, `LogDebug`, `LogTrace`, `LogCritical`, `WriteLine`\n- JavaScript: `console.log`, `console.info`, `console.warn`, `console.error`, `console.debug`\n\n*⚠️ Note: Setting this replaces ALL defaults. Include any default functions you still want to detect.*"
         },
         "piiJsonChecker.maskingPatterns": {
           "type": "array",
@@ -101,7 +119,8 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional masking method patterns to recognize as safe (e.g., ['.sanitize(', '.encrypt('])"
+          "description": "Additional Masking Patterns (Additive): Method patterns recognized as safe masking. These are ADDED to built-in patterns. Example: [\".sanitize(\", \".encrypt(\", \".redact(\"]",
+          "markdownDescription": "**Additional Masking Patterns** *(Additive Mode)*\n\nMethod call patterns that indicate a value has been safely masked or sanitized. These patterns are **added to** the built-in masking patterns.\n\n**Examples:**\n```json\n[\".sanitize(\", \".encrypt(\", \".redact(\", \".anonymize(\"]\n```\n\n**Built-in masking patterns:**\n- `.Mask(`, `.mask(`\n- `.Redact(`, `.redact(`\n- `.Hash(`, `.hash(`\n- `.Encrypt(`, `.encrypt(`\n- `[Masked]`, `[REDACTED]`, `***`\n\n*Tip: Add your custom sanitization method names here to prevent false positives.*"
         }
       }
     }

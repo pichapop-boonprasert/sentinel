@@ -13,6 +13,9 @@ const patternMatcher = new PatternMatcher();
 const configurationManager = new ConfigurationManager();
 const diagnosticGenerator = new DiagnosticGenerator();
 
+// Output channel for logging warnings and configuration issues
+let outputChannel: vscode.OutputChannel;
+
 const SUPPORTED_LANGUAGES = [
   "json", "jsonc",
   "csharp", "vb", "razor", "aspnetcorerazor",
@@ -71,6 +74,10 @@ export function activate(context: vscode.ExtensionContext) {
   diagnosticCollection =
     vscode.languages.createDiagnosticCollection("pii-checker");
 
+  // Create output channel for logging warnings and configuration issues
+  outputChannel = vscode.window.createOutputChannel("PII Checker");
+  context.subscriptions.push(outputChannel);
+
   // Status bar item to show PII count
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
@@ -81,6 +88,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Watch for file creation/deletion in the workspace
   const fileWatcher = vscode.workspace.createFileSystemWatcher(WORKSPACE_SCAN_GLOB);
+  // Validate configuration on activation
+  validateAndNotifyConfiguration();
 
   context.subscriptions.push(
     diagnosticCollection,
@@ -111,6 +120,20 @@ export function activate(context: vscode.ExtensionContext) {
     fileWatcher.onDidDelete((uri) => {
       diagnosticCollection.delete(uri);
       updateStatusBar();
+    }),
+    vscode.window.onDidChangeActiveTextEditor(() => updateStatusBar()),
+    // Configuration change listener for real-time updates (Requirements 3.6, 4.6)
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('piiJsonChecker')) {
+        // Refresh registries to pick up new configuration
+        loggingAnalyzer.refresh();
+        
+        // Validate configuration and notify user of any issues (Requirements 7.5, 7.6)
+        validateAndNotifyConfiguration();
+        
+        // Re-analyze all open documents with new configuration
+        vscode.workspace.textDocuments.forEach(analyzeDocument);
+      }
     })
   );
 
@@ -137,6 +160,46 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
   diagnosticCollection?.dispose();
   statusBarItem?.dispose();
+  outputChannel?.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// Configuration Validation and Notification (Requirements 7.5, 7.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates the current configuration and notifies the user of any issues.
+ * Logs warnings to the output channel and shows a notification if there are problems.
+ */
+function validateAndNotifyConfiguration(): void {
+  const validationResult = configurationManager.validateConfiguration();
+  
+  if (!validationResult.isValid && validationResult.warnings.length > 0) {
+    // Log each warning to the output channel
+    outputChannel.appendLine(`[${new Date().toISOString()}] Configuration validation warnings:`);
+    for (const warning of validationResult.warnings) {
+      outputChannel.appendLine(`  - ${warning.setting}: ${warning.message}`);
+      if (warning.invalidValue !== undefined) {
+        outputChannel.appendLine(`    Invalid value: ${JSON.stringify(warning.invalidValue)}`);
+      }
+      if (warning.fallbackValue !== undefined) {
+        outputChannel.appendLine(`    Using fallback: ${JSON.stringify(warning.fallbackValue)}`);
+      }
+    }
+    outputChannel.appendLine('');
+    
+    // Show notification to user with option to view output channel
+    vscode.window
+      .showWarningMessage(
+        `PII Checker: Some configuration values are invalid and were skipped. See Output for details.`,
+        "Show Output"
+      )
+      .then((action) => {
+        if (action === "Show Output") {
+          outputChannel.show();
+        }
+      });
+  }
 }
 
 // ---------------------------------------------------------------------------
