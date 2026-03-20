@@ -4,7 +4,7 @@
   "publisher": "dandadan-beun-beun-beun",
   "icon": "logo.png",
   "description": "Detects potential PII fields (first name, last name) in JSON and .NET files and shows inline warnings like SonarQube",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.85.0"
   },

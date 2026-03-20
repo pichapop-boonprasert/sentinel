@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel — PII Detection for VS Code</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg-dark: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-code: #1a1a2e;
+    --accent: #6c5ce7;
+    --accent-light: #a29bfe;
+    --accent-glow: rgba(108, 92, 231, 0.3);
+    --warning: #fdcb6e;
+    --error: #ff6b6b;
+    --success: #00b894;
+    --info: #74b9ff;
+    --text: #e8e8f0;
+    --text-dim: #8888a0;
+    --border: #2a2a3e;
+    --pii: #a29bfe;
+    --financial: #fdcb6e;
+    --health: #55efc4;
+    --credentials: #ff7675;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-snap-type: y mandatory;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text);
+    overflow-x: hidden;
+    line-height: 1.6;
+  }
+
+  /* ── Slide System ── */
+  .slide {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    scroll-snap-align: start;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slide::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 60%);
+    opacity: 0.15;
+    pointer-events: none;
+  }
+
+  /* ── Navigation ── */
+  .nav {
+    position: fixed;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .nav a {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--border);
+    display: block;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+  }
+
+  .nav a:hover, .nav a.active {
+    background: var(--accent);
+    border-color: var(--accent-light);
+    transform: scale(1.3);
+  }
+
+  /* ── Slide Counter ── */
+  .slide-number {
+    position: absolute;
+    bottom: 30px;
+    right: 40px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--text-dim);
+    opacity: 0.5;
+  }
+
+  /* ── Typography ── */
+  h1 {
+    font-size: 4.5rem;
+    font-weight: 900;
+    letter-spacing: -2px;
+    line-height: 1.1;
+    margin-bottom: 24px;
+  }
+
+  h2 {
+    font-size: 3rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin-bottom: 20px;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--accent-light);
+  }
+
+  .subtitle {
+    font-size: 1.4rem;
+    color: var(--text-dim);
+    font-weight: 300;
+    max-width: 700px;
+    text-align: center;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, var(--accent-light), var(--accent), #fd79a8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Logo ── */
+  .logo-container {
+    width: 140px;
+    height: 140px;
+    border-radius: 32px;
+    background: linear-gradient(135deg, var(--accent), #fd79a8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 40px;
+    box-shadow: 0 20px 60px var(--accent-glow);
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .logo-container img {
+    width: 100px;
+    height: 100px;
+    border-radius: 20px;
+  }
+
+  .logo-icon {
+    font-size: 64px;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+  }
+
+  /* ── Code Blocks ── */
+  .code-window {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 800px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .code-titlebar {
+    background: #16162a;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .code-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  .code-dot.red { background: #ff5f57; }
+  .code-dot.yellow { background: #febc2e; }
+  .code-dot.green { background: #28c840; }
+
+  .code-filename {
+    margin-left: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .code-body {
+    padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+  }
+
+  .code-body .line {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .line-num {
+    color: #444466;
+    user-select: none;
+    min-width: 24px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .line-content {
+    flex: 1;
+    white-space: pre;
+  }
+
+  /* Syntax highlighting */
+  .kw { color: #c792ea; }
+  .str { color: #c3e88d; }
+  .type { color: #82aaff; }
+  .fn { color: #82aaff; }
+  .cm { color: #546e7a; font-style: italic; }
+  .num { color: #f78c6c; }
+  .op { color: #89ddff; }
+  .var { color: #eeffff; }
+
+  /* PII highlight */
+  .pii-highlight {
+    background: rgba(255, 107, 107, 0.15);
+    border-bottom: 2px wavy var(--error);
+    padding: 1px 2px;
+    border-radius: 2px;
+    position: relative;
+  }
+
+  .pii-highlight.financial {
+    background: rgba(253, 203, 110, 0.15);
+    border-bottom-color: var(--financial);
+  }
+
+  .pii-highlight.health {
+    background: rgba(85, 239, 196, 0.15);
+    border-bottom-color: var(--health);
+  }
+
+  .pii-highlight.credentials {
+    background: rgba(255, 118, 117, 0.15);
+    border-bottom-color: var(--credentials);
+  }
+
+  .pii-highlight.masked {
+    background: rgba(0, 184, 148, 0.1);
+    border-bottom: 2px solid var(--success);
+  }
+
+  /* ── Tooltip ── */
+  .tooltip-demo {
+    background: #1e1e2e;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    max-width: 600px;
+    margin-top: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    line-height: 1.6;
+  }
+
+  .tooltip-demo .warn-icon { color: var(--warning); }
+  .tooltip-demo .compliance { color: var(--info); font-weight: 500; }
+
+  /* ── Cards Grid ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    max-width: 1000px;
+    width: 100%;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light));
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(108, 92, 231, 0.15);
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  .card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .card h3 { color: var(--text); font-size: 1.2rem; }
+  .card p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; }
+
+  /* Category-specific card borders */
+  .card.cat-pii { border-left: 3px solid var(--pii); }
+  .card.cat-financial { border-left: 3px solid var(--financial); }
+  .card.cat-health { border-left: 3px solid var(--health); }
+  .card.cat-credentials { border-left: 3px solid var(--credentials); }
+
+  /* ── Category Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .badge-pii { background: rgba(162,155,254,0.2); color: var(--pii); }
+  .badge-financial { background: rgba(253,203,110,0.2); color: var(--financial); }
+  .badge-health { background: rgba(85,239,196,0.2); color: var(--health); }
+  .badge-credentials { background: rgba(255,118,117,0.2); color: var(--credentials); }
+  .badge-compliance { background: rgba(116,185,255,0.2); color: var(--info); }
+
+  /* ── Architecture Diagram ── */
+  .arch-flow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1100px;
+  }
+
+  .arch-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 28px;
+    text-align: center;
+    min-width: 160px;
+    transition: all 0.3s;
+  }
+
+  .arch-box:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  .arch-box .icon { font-size: 2rem; margin-bottom: 8px; display: block; }
+  .arch-box .label { font-weight: 600; font-size: 0.9rem; }
+  .arch-box .desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+  .arch-arrow {
+    font-size: 1.5rem;
+    color: var(--accent-light);
+    flex-shrink: 0;
+  }
+
+  /* ── Feature List ── */
+  .feature-list {
+    list-style: none;
+    max-width: 700px;
+    width: 100%;
+  }
+
+  .feature-list li {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    font-size: 1.05rem;
+  }
+
+  .feature-list li:last-child { border-bottom: none; }
+
+  .feature-list .check {
+    color: var(--success);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ── Two Column Layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    max-width: 1100px;
+    width: 100%;
+    align-items: center;
+  }
+
+  .two-col .col { width: 100%; }
+
+  /* ── Quick Fix Demo ── */
+  .quickfix-menu {
+    background: #252536;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 500px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  .quickfix-item {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+
+  .quickfix-item:last-child { border-bottom: none; }
+  .quickfix-item:hover { background: rgba(108, 92, 231, 0.15); }
+  .quickfix-item.selected { background: rgba(108, 92, 231, 0.2); }
+
+  .quickfix-icon { font-size: 1rem; }
+
+  /* ── Status Bar Demo ── */
+  .statusbar-demo {
+    background: #007acc;
+    padding: 4px 16px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: white;
+  }
+
+  .statusbar-demo.warning {
+    background: #c6a020;
+  }
+
+  /* ── Compliance Table ── */
+  .compliance-table {
+    width: 100%;
+    max-width: 900px;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .compliance-table th {
+    background: #16162a;
+    padding: 14px 20px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--accent-light);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .compliance-table td {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    background: var(--bg-card);
+  }
+
+  .compliance-table tr:last-child td { border-bottom: none; }
+
+  /* ── Config Demo ── */
+  .config-block {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    max-width: 600px;
+    width: 100%;
+  }
+
+  /* ── Animations ── */
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .slide > * {
+    animation: slideUp 0.8s ease-out both;
+  }
+
+  .slide > *:nth-child(2) { animation-delay: 0.15s; }
+  .slide > *:nth-child(3) { animation-delay: 0.3s; }
+  .slide > *:nth-child(4) { animation-delay: 0.45s; }
+  .slide > *:nth-child(5) { animation-delay: 0.6s; }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .slide { padding: 40px 24px; }
+    h1 { font-size: 2.8rem; }
+    h2 { font-size: 2rem; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .arch-flow { flex-direction: column; }
+    .nav { display: none; }
+  }
+
+  /* ── Keyboard Hint ── */
+  .kbd {
+    background: #2a2a3e;
+    border: 1px solid #3a3a50;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ── Separator ── */
+  .sep {
+    width: 60px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-light));
+    border-radius: 2px;
+    margin: 20px 0;
+  }
+
+  /* ── Tag row ── */
+  .tags {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 16px;
+  }
+
+  /* ── Stat boxes ── */
+  .stats-row {
+    display: flex;
+    gap: 40px;
+    margin-top: 32px;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat .num {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--accent-light);
+  }
+
+  .stat .label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── Inline warning ── */
+  .inline-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(253, 203, 110, 0.08);
+    border-left: 3px solid var(--warning);
+    padding: 8px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    color: var(--warning);
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<!-- Navigation Dots -->
+<nav class="nav" id="nav">
+  <a href="#slide-1" title="Title"></a>
+  <a href="#slide-2" title="Problem"></a>
+  <a href="#slide-3" title="Solution"></a>
+  <a href="#slide-4" title="Categories"></a>
+  <a href="#slide-5" title="Detection Demo"></a>
+  <a href="#slide-6" title="Logging Analysis"></a>
+  <a href="#slide-7" title="Quick Fix"></a>
+  <a href="#slide-8" title="Architecture"></a>
+  <a href="#slide-9" title="Compliance"></a>
+  <a href="#slide-10" title="Configuration"></a>
+  <a href="#slide-11" title="Features"></a>
+  <a href="#slide-12" title="Closing"></a>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 1 — Title -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-1">
+  <div class="logo-container">
+    <span class="logo-icon">🛡️</span>
+  </div>
+  <h1><span class="gradient-text">Sentinel</span></h1>
+  <p class="subtitle">
+    Real-time PII &amp; sensitive data detection for VS Code.<br>
+    Catch compliance issues before they reach production.
+  </p>
+  <div class="tags">
+    <span class="badge badge-pii">PII</span>
+    <span class="badge badge-financial">Financial</span>
+    <span class="badge badge-health">Health</span>
+    <span class="badge badge-credentials">Credentials</span>
+  </div>
+  <div class="stats-row">
+    <div class="stat">
+      <div class="num">4</div>
+      <div class="label">Categories</div>
+    </div>
+    <div class="stat">
+      <div class="num">80+</div>
+      <div class="label">Built-in Patterns</div>
+    </div>
+    <div class="stat">
+      <div class="num">10+</div>
+      <div class="label">Languages</div>
+    </div>
+    <div class="stat">
+      <div class="num">6</div>
+      <div class="label">Compliance Frameworks</div>
+    </div>
+  </div>
+  <span class="slide-number">01 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 2 — The Problem -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-2">
+  <h2>The Problem 🚨</h2>
+  <div class="sep"></div>
+  <div class="two-col" style="max-width:1000px;">
+    <div class="col">
+      <div class="code-window">
+        <div class="code-titlebar">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-filename">UserService.cs</span>
+        </div>
+        <div class="code-body">
+<div class="line"><span class="line-num">52</span><span class="line-content"><span class="cm">// Logging sensitive data (BAD PRACTICE)</span></span></div>
+<div class="line"><span class="line-num">53</span><span class="line-content"><span class="var">_logger</span>.<span class="fn">LogInformation</span>(</span></div>
+<div class="line"><span class="line-num">54</span><span class="line-content">  <span class="str">"Retrieved user with SSN: {SSN}"</span>,</span></div>
+<div class="line"><span class="line-num">55</span><span class="line-content">  user?.<span class="pii-highlight">SSN</span>);</span></div>
+<div class="line"><span class="line-num">56</span><span class="line-content"><span class="var">_logger</span>.<span class="fn">LogDebug</span>(</span></div>
+<div class="line"><span class="line-num">57</span><span class="line-content">  <span class="str">"User password: {Password}"</span>,</span></div>
+<div class="line"><span class="line-num">58</span><span class="line-content">  user?.<span class="pii-highlight credentials">Password</span>);</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <h3>Sensitive data leaks into logs every day</h3>
+      <ul class="feature-list">
+        <li><span class="check" style="color:var(--error);">✗</span> SSN, passwords, credit cards logged in plaintext</li>
+        <li><span class="check" style="color:var(--error);">✗</span> Compliance violations discovered too late</li>
+        <li><span class="check" style="color:var(--error);">✗</span> Code reviews miss PII in string interpolation</li>
+        <li><span class="check" style="color:var(--error);">✗</span> Hardcoded secrets slip through to production</li>
+      </ul>
+      <div style="margin-top:24px;">
+        <span class="badge badge-compliance" style="font-size:14px;padding:8px 16px;">
+          Average data breach cost: $4.45M (IBM, 2023)
+        </span>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">02 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 3 — The Solution -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-3">
+  <h2>The Solution: <span class="gradient-text">Sentinel</span></h2>
+  <div class="sep"></div>
+  <p class="subtitle" style="margin-bottom:40px;">
+    A VS Code extension that detects sensitive data fields in real-time,<br>
+    surfaces inline diagnostics with compliance context, and offers one-click fixes.
+  </p>
+  <div class="cards-grid">
+    <div class="card">
+      <span class="card-icon">🔍</span>
+      <h3>Pattern-Based Detection</h3>
+      <p>80+ built-in patterns across 4 categories. Supports camelCase, snake_case, kebab-case, PascalCase — all normalized automatically.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">📋</span>
+      <h3>Context-Aware Logging Analysis</h3>
+      <p>Two-pass analysis: first finds PII fields, then checks if they appear unmasked in logging calls. No noise for fields that are never logged.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">⚡</span>
+      <h3>Real-Time Feedback</h3>
+      <p>Workspace-wide scan on activation. Re-analyzes as you type. Status bar shows live PII count. File watcher catches external changes.</p>
+    </div>
+    <div class="card">
+      <span class="card-icon">🔧</span>
+      <h3>One-Click Quick Fixes</h3>
+      <p>Category-specific masking suggestions. Wrap with MaskHelper, suppress with comments. All from the <span class="kbd">Ctrl+.</span> menu.</p>
+    </div>
+  </div>
+  <span class="slide-number">03 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 4 — Detection Categories -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-4">
+  <h2>Detection Categories</h2>
+  <div class="sep"></div>
+  <div class="cards-grid">
+    <div class="card cat-pii">
+      <span class="card-icon">👤</span>
+      <h3>Personal Identifiable Information</h3>
+      <p>firstName, lastName, email, SSN, phoneNumber, dateOfBirth, address, passportNumber, driverLicense...</p>
+      <div class="tags" style="justify-content:flex-start;margin-top:12px;">
+        <span class="badge badge-compliance">GDPR</span>
+        <span class="badge badge-compliance">CCPA</span>
+        <span class="badge badge-compliance">PDPA</span>
+      </div>
+    </div>
+    <div class="card cat-financial">
+      <span class="card-icon">💳</span>
+      <h3>Financial Data</h3>
+      <p>creditCardNumber, CVV, bankAccountNumber, routingNumber, IBAN, expirationDate, merchantId...</p>
+      <div class="tags" style="justify-content:flex-start;margin-top:12px;">
+        <span class="badge badge-compliance">PCI-DSS</span>
+        <span class="badge badge-compliance">GDPR</span>
+      </div>
+    </div>
+    <div class="card cat-health">
+      <span class="card-icon">🏥</span>
+      <h3>Health Information</h3>
+      <p>patientId, medicalRecordNumber, diagnosis, prescription, labResults, insuranceId, physicianNpi...</p>
+      <div class="tags" style="justify-content:flex-start;margin-top:12px;">
+        <span class="badge badge-compliance">HIPAA</span>
+        <span class="badge badge-compliance">GDPR</span>
+      </div>
+    </div>
+    <div class="card cat-credentials">
+      <span class="card-icon">🔑</span>
+      <h3>Credentials &amp; Secrets</h3>
+      <p>password, apiKey, accessToken, secretKey, privateKey, connectionString, jwtToken, clientSecret...</p>
+      <div class="tags" style="justify-content:flex-start;margin-top:12px;">
+        <span class="badge badge-compliance">SOC2</span>
+        <span class="badge badge-compliance">ISO27001</span>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">04 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 5 — Detection Demo (JSON + C#) -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-5">
+  <h2>Detection in Action</h2>
+  <div class="sep"></div>
+  <div class="two-col">
+    <div class="col">
+      <h3>JSON — Key Detection</h3>
+      <div class="code-window">
+        <div class="code-titlebar">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-filename">sample.json</span>
+        </div>
+        <div class="code-body">
+<div class="line"><span class="line-num">1</span><span class="line-content">{</span></div>
+<div class="line"><span class="line-num">2</span><span class="line-content">  <span class="pii-highlight">"first_name"</span>: <span class="str">"John"</span>,</span></div>
+<div class="line"><span class="line-num">3</span><span class="line-content">  <span class="pii-highlight">"last_name"</span>: <span class="str">"Doe"</span>,</span></div>
+<div class="line"><span class="line-num">4</span><span class="line-content">  <span class="pii-highlight">"email"</span>: <span class="str">"john@example.com"</span>,</span></div>
+<div class="line"><span class="line-num">5</span><span class="line-content">  <span class="str">"age"</span>: <span class="num">30</span>,</span></div>
+<div class="line"><span class="line-num">6</span><span class="line-content">  <span class="pii-highlight">"address"</span>: <span class="str">"123 Main St"</span></span></div>
+<div class="line"><span class="line-num">7</span><span class="line-content">}</span></div>
+        </div>
+      </div>
+      <div class="tooltip-demo" style="margin-top:16px;">
+        <span class="warn-icon">⚠️</span> PII data detected: <code>"first_name"</code> matches sensitive pattern <code>"firstName"</code>.<br>
+        This field may contain PII information subject to <span class="compliance">GDPR, CCPA, PDPA</span> regulations.
+      </div>
+    </div>
+    <div class="col">
+      <h3>C# — Model Detection</h3>
+      <div class="code-window">
+        <div class="code-titlebar">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-filename">User.cs</span>
+        </div>
+        <div class="code-body">
+<div class="line"><span class="line-num">1</span><span class="line-content"><span class="kw">public class</span> <span class="type">User</span></span></div>
+<div class="line"><span class="line-num">2</span><span class="line-content">{</span></div>
+<div class="line"><span class="line-num">3</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight">FirstName</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">4</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight">Email</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">5</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight">SSN</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">6</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight credentials">Password</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">7</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight financial">CreditCardNumber</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">8</span><span class="line-content">  <span class="kw">public string</span> <span class="pii-highlight health">MedicalRecordNumber</span> { <span class="kw">get</span>; <span class="kw">set</span>; }</span></div>
+<div class="line"><span class="line-num">9</span><span class="line-content">}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+        <span class="badge badge-pii">pii-field-personal</span>
+        <span class="badge badge-financial">pii-field-financial</span>
+        <span class="badge badge-health">pii-field-health</span>
+        <span class="badge badge-credentials">pii-field-credentials</span>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">05 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 6 — Logging Analysis -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-6">
+  <h2>Context-Aware Logging Analysis</h2>
+  <div class="sep"></div>
+  <p class="subtitle" style="margin-bottom:32px;">
+    Two-pass analysis: only flags PII fields that actually appear unmasked in logging calls.
+  </p>
+  <div class="code-window" style="max-width:900px;">
+    <div class="code-titlebar">
+      <span class="code-dot red"></span>
+      <span class="code-dot yellow"></span>
+      <span class="code-dot green"></span>
+      <span class="code-filename">LoggingExample.cs</span>
+    </div>
+    <div class="code-body">
+<div class="line"><span class="line-num"> 1</span><span class="line-content"><span class="kw">public void</span> <span class="fn">ProcessUser</span>(<span class="kw">string</span> <span class="pii-highlight">firstName</span>, <span class="kw">string</span> <span class="pii-highlight">lastName</span>)</span></div>
+<div class="line"><span class="line-num"> 2</span><span class="line-content">{</span></div>
+<div class="line"><span class="line-num"> 3</span><span class="line-content">  <span class="cm">// ❌ FLAGGED — unmasked PII in logging</span></span></div>
+<div class="line"><span class="line-num"> 4</span><span class="line-content">  Console.<span class="fn">WriteLine</span>($<span class="str">"Processing: </span>{<span class="pii-highlight">firstName</span>} {<span class="pii-highlight">lastName</span>}<span class="str">"</span>);</span></div>
+<div class="line"><span class="line-num"> 5</span><span class="line-content">  _logger.<span class="fn">LogInformation</span>(<span class="str">"User: "</span> + <span class="pii-highlight">firstName</span>);</span></div>
+<div class="line"><span class="line-num"> 6</span><span class="line-content"></span></div>
+<div class="line"><span class="line-num"> 7</span><span class="line-content">  <span class="cm">// ✅ SAFE — properly masked</span></span></div>
+<div class="line"><span class="line-num"> 8</span><span class="line-content">  _logger.<span class="fn">LogInformation</span>(<span class="str">"User: "</span> + <span class="pii-highlight masked">MaskHelper.Mask(firstName)</span>);</span></div>
+<div class="line"><span class="line-num"> 9</span><span class="line-content">  Console.<span class="fn">WriteLine</span>($<span class="str">"User: </span>{<span class="pii-highlight masked">DataMasker.Redact(lastName)</span>}<span class="str">"</span>);</span></div>
+<div class="line"><span class="line-num">10</span><span class="line-content">  _logger.<span class="fn">LogInformation</span>(<span class="str">"User: <span class="pii-highlight masked">[REDACTED]</span>"</span>);</span></div>
+<div class="line"><span class="line-num">11</span><span class="line-content"></span></div>
+<div class="line"><span class="line-num">12</span><span class="line-content">  <span class="cm">// ✅ NOT FLAGGED — not in a logging context</span></span></div>
+<div class="line"><span class="line-num">13</span><span class="line-content">  <span class="kw">var</span> displayName = firstName + <span class="str">" "</span> + lastName;</span></div>
+<div class="line"><span class="line-num">14</span><span class="line-content">}</span></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:24px;margin-top:24px;flex-wrap:wrap;justify-content:center;">
+    <div class="tooltip-demo" style="max-width:420px;">
+      <span class="warn-icon">⚠️</span> PII data <code>"firstName"</code> is being logged without masking.<br>
+      This may violate <span class="compliance">GDPR, CCPA, PDPA</span>.<br>
+      Consider: <code>MaskHelper.Mask(firstName)</code>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;max-width:320px;">
+      <h3 style="font-size:0.9rem;margin-bottom:8px;">Recognized Masking</h3>
+      <div style="font-size:12px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;line-height:2;">
+        .Mask() · .Redact() · .Anonymize() · .Hash()<br>
+        [REDACTED] · [MASKED] · *** · ****
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">06 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 7 — Quick Fix -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-7">
+  <h2>One-Click Quick Fixes</h2>
+  <div class="sep"></div>
+  <div class="two-col">
+    <div class="col">
+      <div class="code-window">
+        <div class="code-titlebar">
+          <span class="code-dot red"></span>
+          <span class="code-dot yellow"></span>
+          <span class="code-dot green"></span>
+          <span class="code-filename">PaymentsController.cs</span>
+        </div>
+        <div class="code-body">
+<div class="line"><span class="line-num">35</span><span class="line-content">_logger.<span class="fn">LogInformation</span>(</span></div>
+<div class="line"><span class="line-num">36</span><span class="line-content">  <span class="str">"Processing payment: Card={CardNumber}"</span>,</span></div>
+<div class="line"><span class="line-num">37</span><span class="line-content">  request.<span class="pii-highlight financial">CardNumber</span>);</span></div>
+        </div>
+      </div>
+      <div class="inline-warning" style="margin-top:12px;">
+        ⚠️ Financial data "CardNumber" is being logged without masking
+      </div>
+      <div style="margin-top:20px;">
+        <p style="color:var(--text-dim);font-size:0.9rem;">
+          Press <span class="kbd">Ctrl + .</span> on the highlighted field to see quick fix options →
+        </p>
+      </div>
+    </div>
+    <div class="col">
+      <h3 style="margin-bottom:16px;">Quick Fix Menu</h3>
+      <div class="quickfix-menu">
+        <div class="quickfix-item selected">
+          <span class="quickfix-icon">💡</span>
+          <span>Wrap with masking function → <code style="color:var(--success);">MaskHelper.Mask(CardNumber)</code></span>
+        </div>
+        <div class="quickfix-item">
+          <span class="quickfix-icon">💳</span>
+          <span>Mask financial data → <code style="color:var(--financial);">MaskHelper.MaskFinancial(CardNumber)</code></span>
+        </div>
+        <div class="quickfix-item">
+          <span class="quickfix-icon">🔇</span>
+          <span>Suppress PII warning → <code style="color:var(--text-dim);">// pii-checker: suppress</code></span>
+        </div>
+      </div>
+      <div style="margin-top:24px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px;">
+        <h3 style="font-size:0.85rem;margin-bottom:8px;">Category-Specific Masking</h3>
+        <div style="font-size:12px;line-height:2;font-family:'JetBrains Mono',monospace;">
+          <span style="color:var(--pii);">PII</span> → MaskHelper.MaskPII()<br>
+          <span style="color:var(--financial);">Financial</span> → MaskHelper.MaskFinancial()<br>
+          <span style="color:var(--health);">Health</span> → MaskHelper.MaskPHI()<br>
+          <span style="color:var(--credentials);">Credentials</span> → MaskHelper.Redact()
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">07 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 8 — Architecture -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-8">
+  <h2>Architecture</h2>
+  <div class="sep"></div>
+  <div class="arch-flow">
+    <div class="arch-box">
+      <span class="icon">📄</span>
+      <span class="label">Document Event</span>
+      <span class="desc">Open / Edit / Create</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box">
+      <span class="icon">🔀</span>
+      <span class="label">extension.ts</span>
+      <span class="desc">Router &amp; Orchestrator</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box" style="border-color:var(--accent);">
+      <span class="icon">🧩</span>
+      <span class="label">PatternMatcher</span>
+      <span class="desc">Normalize &amp; Match</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box">
+      <span class="icon">📊</span>
+      <span class="label">LoggingAnalyzer</span>
+      <span class="desc">Two-Pass Analysis</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-box" style="border-color:var(--warning);">
+      <span class="icon">⚠️</span>
+      <span class="label">DiagnosticGenerator</span>
+      <span class="desc">VS Code Diagnostics</span>
+    </div>
+  </div>
+
+  <div style="margin-top:48px;display:flex;gap:24px;flex-wrap:wrap;justify-content:center;">
+    <div class="arch-box" style="min-width:200px;">
+      <span class="icon">⚙️</span>
+      <span class="label">ConfigurationManager</span>
+      <span class="desc">VS Code Settings → Effective Patterns</span>
+    </div>
+    <div class="arch-box" style="min-width:200px;">
+      <span class="icon">📦</span>
+      <span class="label">PatternRegistry</span>
+      <span class="desc">Defaults + Custom − Excluded</span>
+    </div>
+    <div class="arch-box" style="min-width:200px;">
+      <span class="icon">📝</span>
+      <span class="label">LoggingMethodRegistry</span>
+      <span class="desc">Default / Custom Methods</span>
+    </div>
+  </div>
+
+  <div style="margin-top:32px;text-align:center;">
+    <p style="color:var(--text-dim);font-size:0.85rem;max-width:700px;margin:0 auto;">
+      Zero runtime dependencies — uses only the VS Code API.<br>
+      Pattern matching is normalized: <code>camelCase</code>, <code>snake_case</code>, <code>kebab-case</code>, <code>PascalCase</code> all resolve to the same form.
+    </p>
+  </div>
+  <span class="slide-number">08 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 9 — Compliance Mapping -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-9">
+  <h2>Compliance Mapping</h2>
+  <div class="sep"></div>
+  <table class="compliance-table">
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Diagnostic Code</th>
+        <th>Regulations</th>
+        <th>Example Fields</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge badge-pii">👤 PII</span></td>
+        <td><code>pii-field-personal</code></td>
+        <td>GDPR, CCPA, PDPA</td>
+        <td>firstName, email, SSN, dateOfBirth</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-financial">💳 Financial</span></td>
+        <td><code>pii-field-financial</code></td>
+        <td>PCI-DSS, GDPR</td>
+        <td>creditCardNumber, CVV, IBAN, routingNumber</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-health">🏥 Health</span></td>
+        <td><code>pii-field-health</code></td>
+        <td>HIPAA, GDPR</td>
+        <td>patientId, diagnosis, medicalRecordNumber</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-credentials">🔑 Credentials</span></td>
+        <td><code>pii-field-credentials</code></td>
+        <td>SOC2, ISO27001</td>
+        <td>password, apiKey, accessToken, secretKey</td>
+      </tr>
+      <tr>
+        <td><span style="color:var(--warning);">⚠️ Logging</span></td>
+        <td><code>pii-logging-unmasked</code></td>
+        <td>All applicable</td>
+        <td>Any sensitive field in logging calls</td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="margin-top:24px;text-align:center;">
+    <p style="color:var(--text-dim);font-size:0.85rem;">
+      Each diagnostic links to compliance documentation. Hover over any warning to see the full regulatory context.
+    </p>
+  </div>
+  <span class="slide-number">09 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 10 — Configuration -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-10">
+  <h2>Fully Configurable</h2>
+  <div class="sep"></div>
+  <div class="two-col">
+    <div class="col">
+      <h3>Add Custom Patterns</h3>
+      <div class="config-block">
+<span class="cm">// settings.json</span>
+{
+  <span class="str">"piiJsonChecker.customPatterns.pii"</span>: [
+    <span class="str">"employeeId"</span>,
+    <span class="str">"staffNumber"</span>
+  ],
+  <span class="str">"piiJsonChecker.excludedPatterns"</span>: [
+    <span class="str">"displayName"</span>,
+    <span class="str">"publicKey"</span>
+  ]
+}
+      </div>
+      <div style="margin-top:20px;">
+        <h3>Custom Logging Functions</h3>
+        <div class="config-block">
+{
+  <span class="str">"piiJsonChecker.loggingFunctions"</span>: [
+    <span class="str">"MyLogger.Log"</span>,
+    <span class="str">"Audit.Write"</span>
+  ]
+}
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <h3 style="margin-bottom:20px;">Configuration Behavior</h3>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="card" style="padding:20px;">
+          <span style="color:var(--success);font-weight:600;">Additive</span>
+          <p style="margin-top:4px;">customPatterns.* — added to built-in patterns</p>
+        </div>
+        <div class="card" style="padding:20px;">
+          <span style="color:var(--error);font-weight:600;">Removes</span>
+          <p style="margin-top:4px;">excludedPatterns — removes from detection</p>
+        </div>
+        <div class="card" style="padding:20px;">
+          <span style="color:var(--warning);font-weight:600;">Replace</span>
+          <p style="margin-top:4px;">loggingFunctions — replaces defaults when set</p>
+        </div>
+        <div class="card" style="padding:20px;">
+          <span style="color:var(--info);font-weight:600;">Additive</span>
+          <p style="margin-top:4px;">maskingPatterns — added to built-in masking</p>
+        </div>
+      </div>
+      <div style="margin-top:20px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px;">
+        <h3 style="font-size:0.85rem;margin-bottom:8px;">Severity Levels</h3>
+        <div style="font-size:13px;line-height:2;">
+          <span style="color:var(--error);">●</span> Error — red underline<br>
+          <span style="color:var(--warning);">●</span> Warning — yellow underline (default)<br>
+          <span style="color:var(--info);">●</span> Information — blue underline<br>
+          <span style="color:var(--text-dim);">●</span> Hint — subtle dots
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="slide-number">10 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 11 — All Features -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-11">
+  <h2>Feature Overview</h2>
+  <div class="sep"></div>
+  <div class="two-col" style="max-width:1100px;">
+    <div class="col">
+      <ul class="feature-list">
+        <li><span class="check">✓</span> Inline diagnostics with wavy underlines on sensitive fields</li>
+        <li><span class="check">✓</span> Hover tooltips with compliance context (GDPR, HIPAA, PCI-DSS)</li>
+        <li><span class="check">✓</span> Two-pass logging analysis — no noise for non-logged fields</li>
+        <li><span class="check">✓</span> Category-specific quick-fix masking suggestions</li>
+        <li><span class="check">✓</span> Workspace-wide scan on activation</li>
+        <li><span class="check">✓</span> Real-time re-analysis as you type</li>
+      </ul>
+    </div>
+    <div class="col">
+      <ul class="feature-list">
+        <li><span class="check">✓</span> File watcher for external changes and new files</li>
+        <li>
+          <span class="check">✓</span>
+          <span>Status bar indicator: <span class="statusbar-demo warning">⚠ PII: 3 / 12</span></span>
+        </li>
+        <li><span class="check">✓</span> Notification toast on file open with "Show Problems" action</li>
+        <li><span class="check">✓</span> Configurable patterns, logging methods, severity, and masking</li>
+        <li><span class="check">✓</span> Configuration validation with output channel logging</li>
+        <li><span class="check">✓</span> Supports JSON, C#, VB, Razor, TypeScript, JavaScript, JSX, TSX</li>
+      </ul>
+    </div>
+  </div>
+  <span class="slide-number">11 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 12 — Closing -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-12">
+  <div class="logo-container" style="width:100px;height:100px;border-radius:24px;">
+    <span class="logo-icon" style="font-size:48px;">🛡️</span>
+  </div>
+  <h1><span class="gradient-text">Get Started</span></h1>
+  <div class="sep"></div>
+  <div class="code-window" style="max-width:500px;">
+    <div class="code-titlebar">
+      <span class="code-dot red"></span>
+      <span class="code-dot yellow"></span>
+      <span class="code-dot green"></span>
+      <span class="code-filename">Terminal</span>
+    </div>
+    <div class="code-body">
+<div class="line"><span class="line-num">$</span><span class="line-content"> <span class="kw">cd</span> extension</span></div>
+<div class="line"><span class="line-num">$</span><span class="line-content"> npm install</span></div>
+<div class="line"><span class="line-num">$</span><span class="line-content"> npm run compile</span></div>
+<div class="line"><span class="line-num"> </span><span class="line-content"><span class="cm"># Press F5 to launch Extension Development Host</span></span></div>
+    </div>
+  </div>
+  <div style="margin-top:32px;text-align:center;">
+    <p style="color:var(--text-dim);font-size:1rem;max-width:600px;">
+      Open any source file and Sentinel starts working immediately.<br>
+      No configuration required — just install and code safely.
+    </p>
+  </div>
+  <div class="tags" style="margin-top:24px;">
+    <span class="badge badge-pii" style="font-size:14px;padding:8px 16px;">TypeScript</span>
+    <span class="badge badge-financial" style="font-size:14px;padding:8px 16px;">VS Code Extension</span>
+    <span class="badge badge-health" style="font-size:14px;padding:8px 16px;">Zero Dependencies</span>
+    <span class="badge badge-credentials" style="font-size:14px;padding:8px 16px;">MIT License</span>
+  </div>
+  <span class="slide-number">12 / 12</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- Navigation Script -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+  // Highlight active nav dot based on scroll position
+  const slides = document.querySelectorAll('.slide');
+  const navLinks = document.querySelectorAll('.nav a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        navLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { threshold: 0.5 });
+
+  slides.forEach(slide => observer.observe(slide));
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    const currentSlide = [...slides].findIndex(s => {
+      const rect = s.getBoundingClientRect();
+      return rect.top >= -100 && rect.top <= window.innerHeight / 2;
+    });
+
+    if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault();
+      const next = Math.min(currentSlide + 1, slides.length - 1);
+      slides[next].scrollIntoView({ behavior: 'smooth' });
+    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault();
+      const prev = Math.max(currentSlide - 1, 0);
+      slides[prev].scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+</script>
+
+</body>
+</html>
