@@ -887,6 +887,64 @@
     border-color: #007acc;
     color: #fff;
   }
+
+  /* ── Demo GIF Slides ── */
+  .demo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    max-width: 1100px;
+    width: 100%;
+  }
+
+  .demo-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.3s;
+  }
+
+  .demo-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 8px 32px rgba(108, 92, 231, 0.15);
+    transform: translateY(-2px);
+  }
+
+  .demo-card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #16162a;
+  }
+
+  .demo-card-header .demo-icon {
+    font-size: 1.2rem;
+  }
+
+  .demo-card-header .demo-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .demo-card-header .demo-sublabel {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .demo-card img {
+    width: 100%;
+    display: block;
+    background: #1e1e1e;
+  }
+
+  .demo-card.warn { border-top: 3px solid var(--error); }
+  .demo-card.safe { border-top: 3px solid var(--success); }
 </style>
 </head>
 <body>
@@ -901,11 +959,13 @@
   <a href="#slide-6" title="Detection Demo"></a>
   <a href="#slide-7" title="Logging Analysis"></a>
   <a href="#slide-8" title="Quick Fix"></a>
-  <a href="#slide-9" title="Architecture"></a>
-  <a href="#slide-10" title="Compliance"></a>
-  <a href="#slide-11" title="Configuration"></a>
-  <a href="#slide-12" title="Features"></a>
-  <a href="#slide-13" title="Closing"></a>
+  <a href="#slide-9" title="Demo: Bad"></a>
+  <a href="#slide-10" title="Demo: Good"></a>
+  <a href="#slide-11" title="Architecture"></a>
+  <a href="#slide-12" title="Compliance"></a>
+  <a href="#slide-13" title="Configuration"></a>
+  <a href="#slide-14" title="Features"></a>
+  <a href="#slide-15" title="Closing"></a>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -944,7 +1004,7 @@
       <div class="label">Compliance Frameworks</div>
     </div>
   </div>
-  <span class="slide-number">01 / 13</span>
+  <span class="slide-number">01 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -988,7 +1048,7 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">02 / 13</span>
+  <span class="slide-number">02 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1023,7 +1083,7 @@
       <p>Category-specific masking suggestions. Wrap with MaskHelper, suppress with comments. All from the <span class="kbd">Ctrl+.</span> menu.</p>
     </div>
   </div>
-  <span class="slide-number">03 / 13</span>
+  <span class="slide-number">03 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1044,7 +1104,7 @@
 
     <!-- Header -->
     <div class="mp-header">
-      <img src="../extension/logo.png" alt="Sentinel Logo" class="mp-logo">
+      <img src="./logo.png" alt="Sentinel Logo" class="mp-logo">
       <div class="mp-header-info">
         <h1 class="mp-title">Sentinel</h1>
         <div class="mp-publisher">dandadan-beun-beun-beun</div>
@@ -1126,7 +1186,7 @@
     </div>
   </div>
 
-  <span class="slide-number">04 / 13</span>
+  <span class="slide-number">04 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1174,7 +1234,7 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">05 / 13</span>
+  <span class="slide-number">05 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1237,7 +1297,7 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">06 / 13</span>
+  <span class="slide-number">06 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1287,7 +1347,7 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">07 / 13</span>
+  <span class="slide-number">07 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1347,13 +1407,51 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">08 / 13</span>
+  <span class="slide-number">08 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- SLIDE 9 — Architecture -->
+<!-- SLIDE 9 — Demo: Bad (Unmasked PII) -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<section class="slide" id="slide-9">
+<section class="slide" id="slide-9" style="padding:40px 60px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+    <span style="font-size:2rem;">❌</span>
+    <h2 style="margin-bottom:0;">Unmasked PII in Logging</h2>
+  </div>
+  <p class="subtitle" style="margin-bottom:24px;color:var(--error);">
+    SHOULD trigger <code style="color:var(--error);">pii-logging-unmasked</code> warnings
+  </p>
+
+  <div class="demo-card warn" style="max-width:960px;width:100%;border-radius:12px;">
+    <img src="These SHOULD trigger pii-logging-unmasked warnings.gif" alt="Demo: unmasked PII triggers warnings" style="width:100%;display:block;border-radius:0 0 12px 12px;">
+  </div>
+
+  <span class="slide-number">09 / 15</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 10 — Demo: Good (Masked PII) -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-10" style="padding:40px 60px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+    <span style="font-size:2rem;">✅</span>
+    <h2 style="margin-bottom:0;">Properly Masked — No Warnings</h2>
+  </div>
+  <p class="subtitle" style="margin-bottom:24px;color:var(--success);">
+    Should NOT trigger warnings — masking detected
+  </p>
+
+  <div class="demo-card safe" style="max-width:960px;width:100%;border-radius:12px;">
+    <img src="These should NOT trigger logging warnings (masked).gif" alt="Demo: masked fields are safe" style="width:100%;display:block;border-radius:0 0 12px 12px;">
+  </div>
+
+  <span class="slide-number">10 / 15</span>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 11 — Architecture -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="slide" id="slide-11">
   <h2>Architecture</h2>
   <div class="sep"></div>
   <div class="arch-flow">
@@ -1412,13 +1510,13 @@
       Pattern matching is normalized: <code>camelCase</code>, <code>snake_case</code>, <code>kebab-case</code>, <code>PascalCase</code> all resolve to the same form.
     </p>
   </div>
-  <span class="slide-number">09 / 13</span>
+  <span class="slide-number">11 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- SLIDE 10 — Compliance Mapping -->
+<!-- SLIDE 12 — Compliance Mapping -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<section class="slide" id="slide-10">
+<section class="slide" id="slide-12">
   <h2>Compliance Mapping</h2>
   <div class="sep"></div>
   <table class="compliance-table">
@@ -1468,13 +1566,13 @@
       Each diagnostic links to compliance documentation. Hover over any warning to see the full regulatory context.
     </p>
   </div>
-  <span class="slide-number">10 / 13</span>
+  <span class="slide-number">12 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- SLIDE 11 — Configuration -->
+<!-- SLIDE 13 — Configuration -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<section class="slide" id="slide-11">
+<section class="slide" id="slide-13">
   <h2>Fully Configurable</h2>
   <div class="sep"></div>
   <div class="two-col">
@@ -1536,13 +1634,13 @@
       </div>
     </div>
   </div>
-  <span class="slide-number">11 / 13</span>
+  <span class="slide-number">13 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- SLIDE 12 — All Features -->
+<!-- SLIDE 14 — All Features -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<section class="slide" id="slide-12">
+<section class="slide" id="slide-14">
   <h2>Feature Overview</h2>
   <div class="sep"></div>
   <div class="two-col" style="max-width:1100px;">
@@ -1570,13 +1668,13 @@
       </ul>
     </div>
   </div>
-  <span class="slide-number">12 / 13</span>
+  <span class="slide-number">14 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- SLIDE 13 — Closing -->
+<!-- SLIDE 15 — Closing -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<section class="slide" id="slide-13">
+<section class="slide" id="slide-15">
   <div class="logo-container" style="width:100px;height:100px;border-radius:24px;">
     <span class="logo-icon" style="font-size:48px;">🛡️</span>
   </div>
@@ -1608,7 +1706,7 @@
     <span class="badge badge-health" style="font-size:14px;padding:8px 16px;">Zero Dependencies</span>
     <span class="badge badge-credentials" style="font-size:14px;padding:8px 16px;">MIT License</span>
   </div>
-  <span class="slide-number">13 / 13</span>
+  <span class="slide-number">15 / 15</span>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
