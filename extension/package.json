@@ -25,35 +25,92 @@
     "configuration": {
       "title": "PII JSON Checker",
       "properties": {
-        "piiJsonChecker.patterns": {
-          "type": "array",
-          "default": [
-            "first_name", "firstname", "first name",
-            "last_name", "lastname", "last name",
-            "firstName", "lastName"
-          ],
-          "description": "List of JSON key patterns to flag as potential PII"
-        },
         "piiJsonChecker.severity": {
           "type": "string",
           "default": "Warning",
           "enum": ["Error", "Warning", "Information", "Hint"],
-          "description": "Severity level for PII diagnostics"
+          "description": "Severity level for sensitive field diagnostics"
         },
         "piiJsonChecker.enableLoggingDetection": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable PII detection in logging statements"
+          "description": "Enable/disable sensitive field detection in logging statements"
+        },
+        "piiJsonChecker.categories.pii": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of Personal Identifiable Information (PII) fields such as names, emails, addresses, SSN, etc. (GDPR, CCPA compliance)"
+        },
+        "piiJsonChecker.categories.financial": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of financial data fields such as credit card numbers, bank accounts, CVV, etc. (PCI-DSS compliance)"
+        },
+        "piiJsonChecker.categories.health": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of health information fields such as patient IDs, diagnoses, prescriptions, etc. (HIPAA compliance)"
+        },
+        "piiJsonChecker.categories.credentials": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of authentication credential fields such as passwords, API keys, tokens, connection strings, etc. (SOC2, ISO27001 compliance)"
+        },
+        "piiJsonChecker.customPatterns.pii": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional PII patterns to detect (e.g., ['employeeId', 'staffNumber'])"
+        },
+        "piiJsonChecker.customPatterns.financial": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional financial patterns to detect (e.g., ['invoiceNumber', 'transactionId'])"
+        },
+        "piiJsonChecker.customPatterns.health": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional health information patterns to detect (e.g., ['allergyInfo', 'bloodType'])"
+        },
+        "piiJsonChecker.customPatterns.credentials": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional credential patterns to detect (e.g., ['serviceKey', 'authCode'])"
+        },
+        "piiJsonChecker.excludedPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Patterns to exclude from detection (e.g., ['displayName'] to allow display names without warnings)"
         },
         "piiJsonChecker.loggingFunctions": {
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "description": "Additional logging function names to detect (e.g. ['myLogger.log'])"
+          "description": "Additional logging function names to detect (e.g., ['myLogger.log', 'customLog'])"
         },
         "piiJsonChecker.maskingPatterns": {
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "description": "Additional masking method patterns (e.g. ['.sanitize('])"
+          "description": "Additional masking method patterns to recognize as safe (e.g., ['.sanitize(', '.encrypt('])"
         }
       }
     }

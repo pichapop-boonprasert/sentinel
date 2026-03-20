@@ -3,7 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = require("vscode");
+const loggingAnalyzer_1 = require("./analyzers/loggingAnalyzer");
+const patternMatcher_1 = require("./patterns/patternMatcher");
+const configurationManager_1 = require("./config/configurationManager");
+const diagnosticGenerator_1 = require("./diagnostics/diagnosticGenerator");
 const DIAGNOSTIC_SOURCE = "PII Checker";
+// Instantiate shared components
+const loggingAnalyzer = new loggingAnalyzer_1.LoggingAnalyzer();
+const patternMatcher = new patternMatcher_1.PatternMatcher();
+const configurationManager = new configurationManager_1.ConfigurationManager();
+const diagnosticGenerator = new diagnosticGenerator_1.DiagnosticGenerator();
 const SUPPORTED_LANGUAGES = [
     "json", "jsonc",
     "csharp", "vb", "razor", "aspnetcorerazor",
@@ -41,41 +50,23 @@ function deactivate() {
     statusBarItem?.dispose();
 }
 // ---------------------------------------------------------------------------
-// Configuration
+// Configuration - now uses ConfigurationManager
 // ---------------------------------------------------------------------------
 function getConfig() {
-    const cfg = vscode.workspace.getConfiguration("piiJsonChecker");
-    const patterns = cfg.get("patterns", [
-        "first_name", "firstname", "first name",
-        "last_name", "lastname", "last name",
-        "firstName", "lastName",
-    ]);
-    const severityStr = cfg.get("severity", "Warning");
-    const severityMap = {
-        Error: vscode.DiagnosticSeverity.Error,
-        Warning: vscode.DiagnosticSeverity.Warning,
-        Information: vscode.DiagnosticSeverity.Information,
-        Hint: vscode.DiagnosticSeverity.Hint,
-    };
     return {
-        patterns,
-        severity: severityMap[severityStr] ?? vscode.DiagnosticSeverity.Warning,
-        enableLoggingDetection: cfg.get("enableLoggingDetection", true),
-        extraLoggingFunctions: cfg.get("loggingFunctions", []),
-        extraMaskingPatterns: cfg.get("maskingPatterns", []),
+        patterns: configurationManager.getEffectivePatterns(),
+        severity: configurationManager.getSeverity(),
+        enableLoggingDetection: configurationManager.isLoggingDetectionEnabled(),
+        extraLoggingFunctions: configurationManager.getExtraLoggingFunctions(),
+        extraMaskingPatterns: configurationManager.getExtraMaskingPatterns(),
     };
 }
-function normalize(s) {
-    return s.toLowerCase().replace(/[-_\s]/g, "");
-}
+/**
+ * Match an identifier against sensitive patterns using PatternMatcher.
+ * Returns the matching SensitivePattern or null.
+ */
 function matchesPii(identifier, patterns) {
-    const norm = normalize(identifier);
-    for (const p of patterns) {
-        if (norm === normalize(p) || norm.includes(normalize(p))) {
-            return p;
-        }
-    }
-    return null;
+    return patternMatcher.matches(identifier, patterns);
 }
 // ---------------------------------------------------------------------------
 // Document router
@@ -97,19 +88,19 @@ function analyzeDocument(document) {
         // 1. Collect all PII field diagnostics
         const piiDiags = analyzeDotNet(document, patterns, severity);
         if (config.enableLoggingDetection && LOG_LANGUAGES.includes(lang)) {
-            // 2. Find which PII identifiers are used in unmasked logging
-            const loggingDiags = analyzeLoggingContext(document, patterns, config);
+            // 2. Use LoggingAnalyzer to find unmasked sensitive fields in logging
+            const loggingDiags = loggingAnalyzer.analyze(document, patterns, config.extraLoggingFunctions, config.extraMaskingPatterns);
             // 3. Build set of PII names that appear in unmasked logging
             const loggedPiiNames = new Set();
             for (const ld of loggingDiags) {
                 const piiText = document.getText(ld.range);
-                loggedPiiNames.add(normalize(piiText));
+                loggedPiiNames.add(patternMatcher.normalize(piiText));
             }
             // 4. Only keep pii-field diagnostics for identifiers that ARE logged
             //    If a PII identifier is never logged, suppress all warnings for it
             const filteredPiiDiags = piiDiags.filter((d) => {
                 const text = document.getText(d.range);
-                return loggedPiiNames.has(normalize(text));
+                return loggedPiiNames.has(patternMatcher.normalize(text));
             });
             diagnostics = [...filteredPiiDiags, ...loggingDiags];
         }
@@ -131,11 +122,12 @@ function analyzeJson(document, patterns, severity) {
     let match;
     while ((match = keyRegex.exec(text)) !== null) {
         const key = match[1];
-        const matched = matchesPii(key, patterns);
-        if (matched) {
+        const matchedPattern = matchesPii(key, patterns);
+        if (matchedPattern) {
             const startPos = document.positionAt(match.index);
             const endPos = document.positionAt(match.index + match[0].length - 1);
-            diagnostics.push(createDiagnostic(key, matched, new vscode.Range(startPos, endPos), severity));
+            const range = new vscode.Range(startPos, endPos);
+            diagnostics.push(diagnosticGenerator.createFieldDiagnostic(key, matchedPattern, range, severity));
         }
     }
     return diagnostics;
@@ -174,8 +166,8 @@ function analyzeDotNet(document, patterns, severity) {
             if (!identifier) {
                 continue;
             }
-            const matched = matchesPii(identifier, patterns);
-            if (matched) {
+            const matchedPattern = matchesPii(identifier, patterns);
+            if (matchedPattern) {
                 // Calculate position of the captured group (group 1)
                 const groupStart = match.index + match[0].indexOf(identifier);
                 const startPos = document.positionAt(groupStart);
@@ -184,189 +176,12 @@ function analyzeDotNet(document, patterns, severity) {
                 // Avoid duplicate diagnostics on the same range
                 const isDuplicate = diagnostics.some((d) => d.range.isEqual(range));
                 if (!isDuplicate) {
-                    diagnostics.push(createDiagnostic(identifier, matched, range, severity));
+                    diagnostics.push(diagnosticGenerator.createFieldDiagnostic(identifier, matchedPattern, range, severity));
                 }
             }
         }
     }
     return diagnostics;
-}
-// ---------------------------------------------------------------------------
-// Logging context analyzer
-// ---------------------------------------------------------------------------
-const DOTNET_LOG_FUNCTIONS = [
-    "Console.WriteLine", "Console.Write",
-    "Debug.WriteLine", "Debug.Write", "Debug.Log",
-    "Trace.WriteLine", "Trace.Write",
-    "LogInformation", "LogWarning", "LogError", "LogDebug", "LogTrace", "LogCritical",
-    "Log.Information", "Log.Warning", "Log.Error", "Log.Debug", "Log.Verbose", "Log.Fatal",
-];
-const JS_LOG_FUNCTIONS = [
-    "console.log", "console.warn", "console.error",
-    "console.info", "console.debug", "console.trace",
-];
-const SHORT_LOG_METHODS = ["Info", "Warn", "Error", "Debug", "Fatal", "Trace"];
-const MASK_METHOD_PATTERNS = [
-    ".Mask(", ".mask(", ".Redact(", ".redact(",
-    ".Anonymize(", ".anonymize(", ".Hash(", ".hash(",
-];
-const MASK_STRING_LITERALS = [
-    '***', '[REDACTED]', '[MASKED]', 'XXX', '****',
-];
-function findLoggingSpans(text, lang, extraFunctions) {
-    const spans = [];
-    const isJs = ["javascript", "typescript", "javascriptreact", "typescriptreact"].includes(lang);
-    const funcs = [
-        ...(isJs ? JS_LOG_FUNCTIONS : DOTNET_LOG_FUNCTIONS),
-        ...extraFunctions,
-    ];
-    for (const func of funcs) {
-        const escaped = func.replace(/\./g, "\\.");
-        const pattern = new RegExp(`\\b${escaped}\\s*\\(`, "g");
-        let m;
-        while ((m = pattern.exec(text)) !== null) {
-            const parenStart = text.indexOf("(", m.index);
-            if (parenStart === -1) {
-                continue;
-            }
-            const argEnd = findMatchingParen(text, parenStart);
-            if (argEnd !== -1) {
-                spans.push({ argStart: parenStart + 1, argEnd });
-            }
-        }
-    }
-    // Short method names (Info, Warn, etc.) require dot prefix
-    if (!isJs) {
-        for (const method of SHORT_LOG_METHODS) {
-            const pattern = new RegExp(`\\.${method}\\s*\\(`, "g");
-            let m;
-            while ((m = pattern.exec(text)) !== null) {
-                const parenStart = text.indexOf("(", m.index);
-                if (parenStart === -1) {
-                    continue;
-                }
-                const argEnd = findMatchingParen(text, parenStart);
-                if (argEnd !== -1) {
-                    spans.push({ argStart: parenStart + 1, argEnd });
-                }
-            }
-        }
-    }
-    return spans;
-}
-function findMatchingParen(text, openPos) {
-    let depth = 1;
-    let i = openPos + 1;
-    while (i < text.length && depth > 0) {
-        const ch = text[i];
-        if (ch === "(") {
-            depth++;
-        }
-        else if (ch === ")") {
-            depth--;
-        }
-        else if (ch === '"' || ch === "'" || ch === "`") {
-            i++;
-            while (i < text.length && text[i] !== ch) {
-                if (text[i] === "\\") {
-                    i++;
-                }
-                i++;
-            }
-        }
-        if (depth > 0) {
-            i++;
-        }
-    }
-    return depth === 0 ? i : -1;
-}
-function isMasked(argText, relStart, extraMaskPatterns) {
-    const allMaskMethods = [...MASK_METHOD_PATTERNS, ...extraMaskPatterns];
-    // Check if PII is inside a mask method call
-    for (const mp of allMaskMethods) {
-        const base = mp.endsWith("(") ? mp.slice(0, -1) : mp;
-        const idx = argText.lastIndexOf(base, relStart);
-        if (idx !== -1) {
-            const afterBase = argText.indexOf("(", idx + base.length);
-            if (afterBase !== -1 && afterBase <= relStart) {
-                return true;
-            }
-        }
-    }
-    // Check if mask string literals appear in the same logging args
-    for (const ms of MASK_STRING_LITERALS) {
-        if (argText.includes(ms)) {
-            return true;
-        }
-    }
-    return false;
-}
-function analyzeLoggingContext(document, patterns, config) {
-    const diagnostics = [];
-    const text = document.getText();
-    const lang = document.languageId;
-    const spans = findLoggingSpans(text, lang, config.extraLoggingFunctions);
-    if (spans.length === 0) {
-        return diagnostics;
-    }
-    // Scan each logging span for PII identifiers
-    const piiRegex = /\b(\w+)\b/g;
-    for (const span of spans) {
-        const argText = text.substring(span.argStart, span.argEnd);
-        piiRegex.lastIndex = 0;
-        let m;
-        while ((m = piiRegex.exec(argText)) !== null) {
-            const identifier = m[1];
-            const matched = matchesPii(identifier, patterns);
-            if (!matched) {
-                continue;
-            }
-            const relStart = m.index;
-            if (isMasked(argText, relStart, config.extraMaskingPatterns)) {
-                continue;
-            }
-            const absStart = span.argStart + relStart;
-            const startPos = document.positionAt(absStart);
-            const endPos = document.positionAt(absStart + identifier.length);
-            const range = new vscode.Range(startPos, endPos);
-            const isDuplicate = diagnostics.some((d) => d.range.isEqual(range));
-            if (!isDuplicate) {
-                diagnostics.push(createLoggingDiagnostic(identifier, matched, range));
-            }
-        }
-    }
-    return diagnostics;
-}
-function createLoggingDiagnostic(identifier, _matchedPattern, range) {
-    const diag = new vscode.Diagnostic(range, `⚠️ PII "${identifier}" is being logged without masking. This may violate data privacy regulations (GDPR, PDPA, CCPA). Consider using a masking utility, e.g. MaskHelper.Mask(${identifier})`, vscode.DiagnosticSeverity.Warning);
-    diag.source = DIAGNOSTIC_SOURCE;
-    diag.code = {
-        value: "pii-logging-unmasked",
-        target: vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"),
-    };
-    diag.tags = [vscode.DiagnosticTag.Unnecessary];
-    diag.relatedInformation = [
-        new vscode.DiagnosticRelatedInformation(new vscode.Location(vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"), new vscode.Position(0, 0)), "PII data should be masked before logging to prevent data leaks"),
-    ];
-    return diag;
-}
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-function createDiagnostic(identifier, matchedPattern, range, severity) {
-    const diag = new vscode.Diagnostic(range, `⚠️ Potential PII detected: "${identifier}" matches pattern "${matchedPattern}". This field may contain personally identifiable information. Consider encrypting, hashing, or removing this field to comply with data privacy regulations (GDPR, PDPA, CCPA).`, severity);
-    diag.source = DIAGNOSTIC_SOURCE;
-    diag.code = {
-        value: "pii-field",
-        target: vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"),
-    };
-    // Tag as "Unnecessary" so the editor fades the code (visual hint like SonarQube)
-    diag.tags = [vscode.DiagnosticTag.Unnecessary];
-    // Add related information pointing to privacy docs
-    diag.relatedInformation = [
-        new vscode.DiagnosticRelatedInformation(new vscode.Location(vscode.Uri.parse("https://en.wikipedia.org/wiki/Personal_data"), new vscode.Position(0, 0)), "Learn more about PII and data privacy regulations"),
-    ];
-    return diag;
 }
 // ---------------------------------------------------------------------------
 // Notification – shown only when a file is first opened
@@ -410,6 +225,33 @@ function updateStatusBar() {
 // ---------------------------------------------------------------------------
 // Code Action provider – quick-fix to suppress warnings
 // ---------------------------------------------------------------------------
+// All diagnostic codes that the PiiCodeActionProvider handles
+const CATEGORY_DIAGNOSTIC_CODES = [
+    "pii-field-personal",
+    "pii-field-financial",
+    "pii-field-health",
+    "pii-field-credentials",
+];
+const LOGGING_DIAGNOSTIC_CODE = "pii-logging-unmasked";
+// Category-specific masking recommendations
+const CATEGORY_MASKING_RECOMMENDATIONS = {
+    "pii-field-personal": { maskFunction: "MaskHelper.MaskPII", description: "Mask personal data" },
+    "pii-field-financial": { maskFunction: "MaskHelper.MaskFinancial", description: "Mask financial data" },
+    "pii-field-health": { maskFunction: "MaskHelper.MaskPHI", description: "Mask health information" },
+    "pii-field-credentials": { maskFunction: "MaskHelper.Redact", description: "Redact credentials" },
+};
+/**
+ * Helper to extract the diagnostic code value from a VS Code diagnostic.
+ */
+function getDiagnosticCodeValue(diag) {
+    if (!diag.code) {
+        return undefined;
+    }
+    if (typeof diag.code === "object" && "value" in diag.code) {
+        return String(diag.code.value);
+    }
+    return String(diag.code);
+}
 class PiiCodeActionProvider {
     provideCodeActions(document, _range, context) {
         const actions = [];
@@ -417,12 +259,10 @@ class PiiCodeActionProvider {
             if (diag.source !== DIAGNOSTIC_SOURCE) {
                 continue;
             }
-            // For logging-unmasked diagnostics, offer wrap with mask
-            if (diag.code &&
-                typeof diag.code === "object" &&
-                "value" in diag.code &&
-                diag.code.value === "pii-logging-unmasked") {
-                const piiText = document.getText(diag.range);
+            const codeValue = getDiagnosticCodeValue(diag);
+            const piiText = document.getText(diag.range);
+            // For logging-unmasked diagnostics, offer wrap with generic mask
+            if (codeValue === LOGGING_DIAGNOSTIC_CODE) {
                 const wrapAction = new vscode.CodeAction("Wrap with masking function", vscode.CodeActionKind.QuickFix);
                 wrapAction.edit = new vscode.WorkspaceEdit();
                 wrapAction.edit.replace(document.uri, diag.range, `MaskHelper.Mask(${piiText})`);
@@ -430,7 +270,19 @@ class PiiCodeActionProvider {
                 wrapAction.isPreferred = true;
                 actions.push(wrapAction);
             }
-            // Suppress comment for all PII diagnostics
+            // For category-specific field diagnostics, offer category-specific masking
+            if (codeValue && CATEGORY_DIAGNOSTIC_CODES.includes(codeValue)) {
+                const recommendation = CATEGORY_MASKING_RECOMMENDATIONS[codeValue];
+                if (recommendation) {
+                    const categoryMaskAction = new vscode.CodeAction(`${recommendation.description} (wrap with ${recommendation.maskFunction})`, vscode.CodeActionKind.QuickFix);
+                    categoryMaskAction.edit = new vscode.WorkspaceEdit();
+                    categoryMaskAction.edit.replace(document.uri, diag.range, `${recommendation.maskFunction}(${piiText})`);
+                    categoryMaskAction.diagnostics = [diag];
+                    categoryMaskAction.isPreferred = false;
+                    actions.push(categoryMaskAction);
+                }
+            }
+            // Suppress comment for all PII diagnostics (both field and logging)
             const suppressAction = new vscode.CodeAction("Suppress PII warning (add comment)", vscode.CodeActionKind.QuickFix);
             const line = diag.range.start.line;
             const indent = document.lineAt(line).text.match(/^\s*/)?.[0] ?? "";
