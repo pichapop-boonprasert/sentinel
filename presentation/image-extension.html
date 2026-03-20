@@ -1,0 +1,99 @@
+<section class="slide" id="slide-4" style="padding:40px 60px;">
+
+  <!-- VS Code Marketplace Mockup -->
+  <div class="vscode-marketplace">
+
+    <!-- Tab Bar -->
+    <div class="mp-tabbar">
+      <div class="mp-tab active">
+        <span style="margin-right:6px;">⊞</span> Extension: Sentinel
+        <span class="mp-tab-close">×</span>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <div class="mp-header">
+      <img src="../extension/logo.png" alt="Sentinel Logo" class="mp-logo">
+      <div class="mp-header-info">
+        <h1 class="mp-title">Sentinel</h1>
+        <div class="mp-publisher">dandadan-beun-beun-beun</div>
+        <div class="mp-desc">Detects potential PII fields (first name, last name) in JSON and .NET files and shows inline warnings like SonarQube</div>
+        <div class="mp-actions">
+          <button class="mp-btn mp-btn-primary">Restart Extensions</button>
+          <button class="mp-btn mp-btn-info">Disable ▾</button>
+          <button class="mp-btn mp-btn-danger">Uninstall</button>
+          <label class="mp-autoupdate">☐ Auto Update ⚙</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="mp-nav">
+      <span class="mp-nav-item active">DETAILS</span>
+      <span class="mp-nav-item">FEATURES</span>
+    </div>
+
+    <!-- Body -->
+    <div class="mp-body">
+      <!-- Main Content -->
+      <div class="mp-main">
+        <h2 class="mp-section-title">Sentinel</h2>
+        <div class="mp-divider"></div>
+        <p class="mp-text">VS Code / Kiro IDE extension that detects potential PII and sensitive fields in JSON keys and logging statements, with inline warnings and quick-fix suggestions.</p>
+
+        <h3 class="mp-h3">How it works</h3>
+        <p class="mp-text">Simply open any source file, start coding, and you will start seeing issues reported by Sentinel. Issues are highlighted in your code and also listed in the 'Problems' panel.</p>
+        <p class="mp-text">You can access the detailed rule description directly from your editor, using the provided contextual menu. Hover over a highlighted field to see the warning message, compliance context (GDPR, HIPAA, PCI-DSS, etc.), and remediation advice. Use Quick Fix (<code class="mp-kbd">Ctrl + .</code> / <code class="mp-kbd">Cmd + .</code>) to apply masking or suppress the warning.</p>
+        <p class="mp-text">Sentinel works in two passes:</p>
+        <ol class="mp-ol">
+          <li>Scans your code for sensitive field names (PII, financial, health, credentials) across properties, variables, parameters, and string literals.</li>
+          <li>Analyzes logging statements to detect when sensitive fields are logged without proper masking — only flagging fields that actually appear in logging calls.</li>
+        </ol>
+        <p class="mp-text">The extension activates on startup and performs a workspace-wide scan across all supported files. As you edit, it re-analyzes in real time. A status bar indicator shows <code class="mp-code-inline">PII: {activeFileCount} / {totalWorkspaceCount}</code> so you always know where you stand.</p>
+
+        <h3 class="mp-h3">Features</h3>
+        <ul class="mp-ul">
+          <li>Inline diagnostics (squiggly underlines) on sensitive field names</li>
+          <li>Detects PII, Financial, Health, and Credential data patterns</li>
+          <li>Logging statement analysis for unmasked sensitive data</li>
+          <li>Hover pop-up with warning message and remediation advice</li>
+          <li>Quick-fix code actions to mask data or suppress warnings</li>
+          <li>Fully configurable patterns, logging methods, and severity</li>
+        </ul>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="mp-sidebar">
+        <h4 class="mp-sidebar-title">Installation</h4>
+        <div class="mp-sidebar-table">
+          <div class="mp-sidebar-row">
+            <span class="mp-sidebar-label">Identifier</span>
+            <span class="mp-sidebar-value">dandadan-beun-beun-beun<br>.sentinel</span>
+          </div>
+          <div class="mp-sidebar-row">
+            <span class="mp-sidebar-label">Version</span>
+            <span class="mp-sidebar-value">1.0.0</span>
+          </div>
+          <div class="mp-sidebar-row">
+            <span class="mp-sidebar-label">Last Updated</span>
+            <span class="mp-sidebar-value">just now</span>
+          </div>
+          <div class="mp-sidebar-row">
+            <span class="mp-sidebar-label">Source</span>
+            <span class="mp-sidebar-value">VSIX</span>
+          </div>
+          <div class="mp-sidebar-row">
+            <span class="mp-sidebar-label">Size</span>
+            <span class="mp-sidebar-value" style="color:#3794ff;">283.86KB</span>
+          </div>
+        </div>
+        <h4 class="mp-sidebar-title" style="margin-top:20px;">Categories</h4>
+        <div>
+          <span class="mp-category-badge">Linters</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <span class="slide-number">04 / 13</span>
+</section>
