@@ -1,6 +1,18 @@
-# PII JSON Checker
+# Sentinel
 
 VS Code / Kiro IDE extension that detects potential PII and sensitive fields in JSON keys and logging statements, with inline warnings and quick-fix suggestions.
+
+## How it works
+
+Simply open any source file, start coding, and you will start seeing issues reported by Sentinel. Issues are highlighted in your code and also listed in the 'Problems' panel.
+
+You can access the detailed rule description directly from your editor, using the provided contextual menu. Hover over a highlighted field to see the warning message, compliance context (GDPR, HIPAA, PCI-DSS, etc.), and remediation advice. Use Quick Fix (`Ctrl + .` / `Cmd + .`) to apply masking or suppress the warning.
+
+Sentinel works in two passes:
+1. Scans your code for sensitive field names (PII, financial, health, credentials) across properties, variables, parameters, and string literals.
+2. Analyzes logging statements to detect when sensitive fields are logged without proper masking — only flagging fields that actually appear in logging calls.
+
+The extension activates on startup and performs a workspace-wide scan across all supported files. As you edit, it re-analyzes in real time. A status bar indicator shows `PII: {activeFileCount} / {totalWorkspaceCount}` so you always know where you stand.
 
 ## Features
 
